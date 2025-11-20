@@ -23,6 +23,9 @@ struct Event: Identifiable, Codable {
     let status: String
     var eventBannerURL: String?
     
+    // --- NUEVO: Contador de Jugadores ---
+    var currentPlayers: Int // <-- AÑADIDO
+    
     // --- Campos de Pago ---
     let isPaidEvent: Bool
     var entryFee: Double?
@@ -43,6 +46,9 @@ struct Event: Identifiable, Codable {
         self.eventDate = dictionary["eventDate"] as? Timestamp ?? Timestamp(date: Date())
         self.status = dictionary["status"] as? String ?? ""
         self.eventBannerURL = dictionary["eventBannerURL"] as? String
+        
+        self.currentPlayers = dictionary["currentPlayers"] as? Int ?? 0 // <-- AÑADIDO
+        
         self.isPaidEvent = dictionary["isPaidEvent"] as? Bool ?? false
         self.entryFee = dictionary["entryFee"] as? Double
         self.hostId = dictionary["hostId"] as? String ?? ""
@@ -61,6 +67,7 @@ struct Event: Identifiable, Codable {
             "eventDate": eventDate,
             "status": status,
             "eventBannerURL": eventBannerURL ?? NSNull(),
+            "currentPlayers": currentPlayers, // <-- AÑADIDO
             "isPaidEvent": isPaidEvent,
             "entryFee": entryFee ?? NSNull(),
             "hostId": hostId,
@@ -68,8 +75,7 @@ struct Event: Identifiable, Codable {
         ]
     }
     
-    // --- Init para crear un Evento (para el Preview) ---
-    // (Lo usaremos para la vista de detalle)
+    // --- Init para crear un Evento (Preview) ---
     init(id: String?, title: String, description: String, gameType: String, mode: String, location: String, maxPlayers: Int, eventDate: Timestamp, status: String, hostId: String, hostName: String) {
         self.id = id
         self.title = title
@@ -80,7 +86,8 @@ struct Event: Identifiable, Codable {
         self.maxPlayers = maxPlayers
         self.eventDate = eventDate
         self.status = status
-        self.isPaidEvent = false // Valor por defecto
+        self.currentPlayers = 0 // <-- AÑADIDO
+        self.isPaidEvent = false
         self.hostId = hostId
         self.hostName = hostName
     }

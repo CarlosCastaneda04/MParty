@@ -30,7 +30,7 @@ struct MainTabView: View {
                 }
             
             // Pestaña 3: Eventos (Placeholder)
-            Text("Eventos (próximamente)")
+            AllEventsView()
                 .tabItem {
                     Label("Eventos", systemImage: "calendar")
                 }
