@@ -186,9 +186,21 @@ struct TopBarView: View {
                 .fontWeight(.bold)
             Spacer()
             NavigationLink(destination: ProfileView()) {
-                Image(systemName: "person.circle.fill")
-                    .font(.system(size: 40))
-                    .foregroundColor(.gray)
+                // --- Lógica para mostrar la foto real ---
+                if let photoURL = user.profilePhotoURL, let url = URL(string: photoURL) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.gray
+                    }
+                    .frame(width: 40, height: 40)
+                    .clipShape(Circle())
+                } else {
+                    // Placeholder si no hay foto
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(.gray)
+                }
             }
         }
     }
