@@ -64,13 +64,24 @@ class EventDetailViewModel: ObservableObject {
         // 1. Crea un objeto Participante a partir del Usuario
         let newParticipant = Participant(from: user)
         
-        // 2. Guarda el 'dictionary' del participante en la sub-colección
         do {
+            // A. Guarda el 'dictionary' del participante en la sub-colección del evento
             try await db.collection("events").document(eventId)
-                      .collection("participants").document(userId) // Usa el UID como ID
+                      .collection("participants").document(userId)
                       .setData(newParticipant.dictionary)
             
-            // 3. Actualiza el estado local
+            // B. NUEVO: Incrementa el contador 'tournamentsPlayed' del USUARIO
+            // Usamos FieldValue.increment(1) para que sea exacto y seguro
+            try await db.collection("users").document(userId).updateData([
+                "tournamentsPlayed": FieldValue.increment(Int64(1))
+            ])
+            
+            // (Opcional: También podrías incrementar 'currentPlayers' en el documento del evento aquí)
+            try await db.collection("events").document(eventId).updateData([
+                "currentPlayers": FieldValue.increment(Int64(1))
+            ])
+            
+            // 3. Actualiza el estado local para que la UI cambie inmediatamente
             self.participants.append(newParticipant)
             self.hasCurrentUserJoined = true
             
@@ -85,13 +96,21 @@ class EventDetailViewModel: ObservableObject {
         guard let eventId = event.id else { return }
         isLoading = true
         
-        // 1. Borra el documento del participante
         do {
+            // 1. Borra el documento del participante
             try await db.collection("events").document(eventId)
                       .collection("participants").document(userId)
                       .delete()
             
-            // 2. Actualiza el estado local
+            // 2. (Opcional) Restar 1 al contador del evento
+             try await db.collection("events").document(eventId).updateData([
+                 "currentPlayers": FieldValue.increment(Int64(-1))
+             ])
+            
+            // Nota: Generalmente NO restamos 'tournamentsPlayed' del usuario histórico
+            // porque técnicamente sí participó (se inscribió), pero eso es decisión tuya.
+            
+            // 3. Actualiza el estado local
             self.participants.removeAll { $0.id == userId }
             self.hasCurrentUserJoined = false
             

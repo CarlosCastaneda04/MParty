@@ -10,24 +10,36 @@ import FirebaseFirestore
 
 struct User: Identifiable, Codable {
     
-    // El 'id' debe coincidir con el UID de Firebase Authentication
     @DocumentID var id: String?
     
     let email: String
     let displayName: String
     var profilePhotoURL: String?
-    let role: String // "host" o "player"
+    let role: String // "host" o "player" (o "Organizador")
     let pais: String?
     
-    // --- Campos de Gamificación ---
-    var xp: Int?
-    var level: Int?
-    var hostCategory: String?
+    // --- Campos de Gamificación y Estadísticas ---
+    var xp: Int?                 // Puntos de experiencia
+    var level: Int?              // Nivel actual
+    var hostCategory: String?    // Solo para Hosts: "Bronce", etc.
     var isPremiumSubscriber: Bool?
     
+    // --- NUEVOS CAMPOS DE ESTADÍSTICAS ---
+    var tournamentsPlayed: Int?  // Cantidad de torneos unidos
+    var tournamentsWon: Int?     // Cantidad de torneos ganados
+    var globalRank: Int?         // Posición en el ranking (ej. #5)
+    
+    // --- PROPIEDAD COMPUTADA (Cálculo automático) ---
+    // Calcula la tasa de victorias al vuelo
+    var winRate: Double {
+        let played = Double(tournamentsPlayed ?? 0)
+        let won = Double(tournamentsWon ?? 0)
+        
+        if played == 0 { return 0.0 }
+        return (won / played) * 100
+    }
     
     // --- TRADUCTOR #1: Convertir de Firestore a User ---
-    // (Iniciador que acepta un diccionario de Firestore)
     init(uid: String, dictionary: [String: Any]) {
         self.id = uid
         self.email = dictionary["email"] as? String ?? ""
@@ -39,10 +51,14 @@ struct User: Identifiable, Codable {
         self.level = dictionary["level"] as? Int ?? 1
         self.hostCategory = dictionary["hostCategory"] as? String
         self.isPremiumSubscriber = dictionary["isPremiumSubscriber"] as? Bool ?? false
+        
+        // Nuevos campos
+        self.tournamentsPlayed = dictionary["tournamentsPlayed"] as? Int ?? 0
+        self.tournamentsWon = dictionary["tournamentsWon"] as? Int ?? 0
+        self.globalRank = dictionary["globalRank"] as? Int ?? 0
     }
     
     // --- TRADUCTOR #2: Convertir de User a Firestore ---
-    // (Una variable que CREA el diccionario para guardar)
     var dictionary: [String: Any] {
         return [
             "email": email,
@@ -51,14 +67,19 @@ struct User: Identifiable, Codable {
             "pais": pais ?? "",
             "xp": xp ?? 0,
             "level": level ?? 1,
-            "hostCategory": hostCategory ?? NSNull(), // Usa NSNull si es nil
+            "hostCategory": hostCategory ?? NSNull(),
             "isPremiumSubscriber": isPremiumSubscriber ?? false,
-            "profilePhotoURL": profilePhotoURL ?? NSNull()
+            "profilePhotoURL": profilePhotoURL ?? NSNull(),
+            
+            // Nuevos campos
+            "tournamentsPlayed": tournamentsPlayed ?? 0,
+            "tournamentsWon": tournamentsWon ?? 0,
+            "globalRank": globalRank ?? 0
         ]
     }
     
-    // --- ESTE ES EL 'INIT' PARA LA VISTA PREVIA ---
-    init(id: String?, email: String, displayName: String, profilePhotoURL: String? = nil, role: String, pais: String?, xp: Int? = 0, level: Int? = 1, hostCategory: String? = nil, isPremiumSubscriber: Bool? = false) {
+    // --- INIT PARA PREVIEWS ---
+    init(id: String?, email: String, displayName: String, profilePhotoURL: String? = nil, role: String, pais: String?, xp: Int? = 0, level: Int? = 1, hostCategory: String? = nil, isPremiumSubscriber: Bool? = false, tournamentsPlayed: Int? = 0, tournamentsWon: Int? = 0, globalRank: Int? = 0) {
         self.id = id
         self.email = email
         self.displayName = displayName
@@ -69,5 +90,10 @@ struct User: Identifiable, Codable {
         self.level = level
         self.hostCategory = hostCategory
         self.isPremiumSubscriber = isPremiumSubscriber
+        
+        // Nuevos campos
+        self.tournamentsPlayed = tournamentsPlayed
+        self.tournamentsWon = tournamentsWon
+        self.globalRank = globalRank
     }
 }

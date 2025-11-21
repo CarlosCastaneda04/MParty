@@ -57,7 +57,7 @@ class AuthViewModel: ObservableObject {
         isLoading = false
     }
     
-    // --- FUNCIÓN DE REGISTRO (Corregida) ---
+    // --- FUNCIÓN DE REGISTRO (ACTUALIZADA CON ESTADÍSTICAS) ---
     @MainActor
     func createUser(withEmail email: String,
                       password: String,
@@ -75,17 +75,24 @@ class AuthViewModel: ObservableObject {
             let uid = authResult.user.uid
             
             // 2. Prepara el "Molde" (Modelo) del nuevo usuario
-            // (Usamos el 'init' largo de User.swift)
+            // AQUÍ ES DONDE INICIALIZAMOS LAS ESTADÍSTICAS EN 0
             let newUser = User(
                 id: uid,
                 email: email,
                 displayName: fullName,
+                profilePhotoURL: nil,
                 role: role,
                 pais: pais,
                 xp: 0,
                 level: 1,
-                hostCategory: role == "host" ? "Bronce" : nil,
-                isPremiumSubscriber: false
+                // Verificamos si es "Organizador" para darle categoría
+                hostCategory: role == "Organizador" ? "Bronce" : nil,
+                isPremiumSubscriber: false,
+                
+                // --- NUEVOS CAMPOS INICIALIZADOS ---
+                tournamentsPlayed: 0,
+                tournamentsWon: 0,
+                globalRank: 0
             )
             
             // 3. Guarda el 'dictionary' en Firestore
@@ -105,7 +112,7 @@ class AuthViewModel: ObservableObject {
         isLoading = false
     }
     
-    // --- FUNCIÓN AUXILIAR (Corregida) ---
+    // --- FUNCIÓN AUXILIAR ---
     // Carga los datos de un usuario desde Firestore
     @MainActor
     func fetchUser(uid: String) async {

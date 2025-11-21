@@ -6,73 +6,80 @@
 //
 
 import Foundation
-import FirebaseFirestore // ¡Importante!
-import Combine // <-- ¡ESTA ERA LA LÍNEA QUE FALTABA!
-// 1. Usamos 'MainActor' para asegurar que
-//    los cambios de 'users' se publiquen en el hilo principal
+import FirebaseFirestore
+import Combine
+
 @MainActor
 class RankingViewModel: ObservableObject {
     
-    // 2. Aquí guardaremos la lista de usuarios del ranking
     @Published var users: [User] = []
-    
-    // 3. Para mostrar un error si falla
     @Published var errorMessage: String?
+    @Published var isLoading = false
     
     private var db = Firestore.firestore()
     
-    // 4. Esta función carga los datos
     func fetchRankings(filter: RankingFilter) async {
-        self.users = [] // Limpia la lista anterior
+        self.isLoading = true
+        self.users = []
         self.errorMessage = nil
         
-        // 5. 'query' es la variable que contendrá la consulta a Firebase
+        // 1. Empezamos la consulta a la colección 'users'
         var query: Query = db.collection("users")
         
-        // --- Lógica de Filtros ---
-        // (Por ahora, 'Nacional' y 'Local' son placeholders,
-        // pero la base ya está lista)
+        // 2. FILTRO CLAVE: Solo mostramos "Jugadores"
+        // (Asegúrate de que en Firebase el rol esté guardado como "Jugador" o "player")
+        // Si usas "Jugador" en el registro, déjalo así. Si usas "player", cámbialo.
+        query = query.whereField("role", isEqualTo: "Jugador")
         
+        // --- Lógica de Filtros Geográficos ---
         switch filter {
         case .global:
-            // Ordena por 'level' (nivel) de mayor a menor
-            query = query.order(by: "level", descending: true)
-        
-        case .national(let country):
-            // Filtra por 'pais' Y ordena por 'level'
-            query = query.whereField("pais", isEqualTo: country)
-                         .order(by: "level", descending: true)
+            // No filtramos por país, traemos a todos los jugadores del mundo
+            break
             
-        case .local:
-            // TODO: Implementar lógica de cercanía (más compleja)
-            query = query.order(by: "level", descending: true)
+        case .national(let country):
+            // Filtramos por el país del usuario actual
+            query = query.whereField("pais", isEqualTo: country)
         }
         
-        // 6. Limita los resultados a los 100 mejores
-        query = query.limit(to: 100)
+        // 3. ORDENAMIENTO: El que tenga más XP va primero
+        query = query.order(by: "xp", descending: true)
+        query = query.limit(to: 50) // Top 50 para no sobrecargar
         
-        // --- Ejecutar la Consulta ---
         do {
             let snapshot = try await query.getDocuments()
             
-            // 7. Traduce los documentos de Firebase a nuestro 'struct User'
-            //    usando el 'init(uid:dictionary:)' que creamos.
             self.users = snapshot.documents.compactMap { doc in
                 let data = doc.data()
                 let uid = doc.documentID
-                return User(uid: uid, dictionary: data)
+                var user = User(uid: uid, dictionary: data)
+                
+                // Asignamos el ranking basado en el orden de la lista (1, 2, 3...)
+                // Esto es solo visual, no se guarda en la base de datos aquí
+                // El índice 0 es el rank 1.
+                return user
             }
             
         } catch {
-            print("DEBUG: Falló al cargar el ranking: \(error.localizedDescription)")
-            self.errorMessage = "No se pudo cargar el ranking."
+            print("DEBUG: Falló al cargar ranking: \(error.localizedDescription)")
+            // Nota: Si ves un error de "index", revisa la consola de Xcode,
+            // Firebase te dará un link para crear el índice necesario automáticamente.
+            self.errorMessage = "Error al cargar. Verifica tu conexión."
         }
+        
+        self.isLoading = false
     }
 }
 
-// Un 'enum' simple para manejar los filtros
+// --- Filtros Actualizados (Sin Local) ---
 enum RankingFilter: Equatable {
     case global
-    case national(String) // Ej. "El Salvador"
-    case local // (A futuro)
+    case national(String) // Ej. "MX" o "El Salvador"
+    
+    var title: String {
+        switch self {
+        case .global: return "Global"
+        case .national: return "Nacional"
+        }
+    }
 }

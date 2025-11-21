@@ -9,149 +9,211 @@ import SwiftUI
 
 struct RankingView: View {
     
-    // 1. Crea el cerebro (ViewModel) para esta vista
     @StateObject private var viewModel = RankingViewModel()
-    
-    // 2. Recibe el cerebro de Auth para saber quién es "TÚ"
     @EnvironmentObject var authViewModel: AuthViewModel
     
-    // 3. State para los filtros (Global, Nacional, Local)
+    // Estado del filtro (Global por defecto)
     @State private var selectedFilter: RankingFilter = .global
     
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 20) {
+            VStack(spacing: 25) {
                 
-                // --- 1. Tarjeta "Tabla de Líderes" ---
-                LeadersCardView(currentUser: authViewModel.currentUser)
-                
-                // --- 2. Filtros ---
-                FilterButtonsView(selectedFilter: $selectedFilter)
-                
-                // --- 3. El Podio (Top 3) ---
-                // Solo muestra el podio si tenemos al menos 3 usuarios
-                if viewModel.users.count >= 3 {
-                    PodiumView(users: Array(viewModel.users.prefix(3)))
+                // --- 1. Tarjeta "Tu Ranking Actual" ---
+                if let currentUser = authViewModel.currentUser {
+                    MyRankingCard(currentUser: currentUser, allUsers: viewModel.users)
                 }
                 
-                // --- 4. Lista "Todos los Rankings" ---
-                RankingListView(
-                    users: Array(viewModel.users.dropFirst(3)), // Envía del #4 en adelante
-                    currentUser: authViewModel.currentUser
-                )
+                // --- 2. Filtros (Global / Nacional) ---
+                HStack(spacing: 15) {
+                    FilterOption(title: "Global", isActive: isGlobal, action: {
+                        selectedFilter = .global
+                    })
+                    
+                    FilterOption(title: "Nacional", isActive: !isGlobal, action: {
+                        // Usamos el país del usuario actual
+                        if let country = authViewModel.currentUser?.pais {
+                            selectedFilter = .national(country)
+                        }
+                    })
+                }
+                .padding(.horizontal)
                 
+                // --- 3. Dropdown de Juegos ---
+                HStack {
+                    Text("Filtrar por juego:")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal)
+                
+                HStack {
+                    Text("Todos los juegos")
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                
+                
+                if viewModel.isLoading {
+                    ProgressView()
+                        .padding(.top, 50)
+                } else {
+                    // --- 4. El Podio (Top 3) ---
+                    // CORRECCIÓN: Muestra el podio aunque sea solo 1 persona
+                    if !viewModel.users.isEmpty {
+                        PodiumView(users: Array(viewModel.users.prefix(3)))
+                    }
+                    
+                    // --- 5. Lista del Resto (#4 en adelante) ---
+                    LazyVStack(spacing: 10) {
+                        // Empezamos desde el índice 3 (el cuarto jugador)
+                        ForEach(Array(viewModel.users.dropFirst(3).enumerated()), id: \.element.id) { index, user in
+                            // El rango real es índice + 4 (porque saltamos 3)
+                            UserRankRow(user: user, rank: index + 4)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
             }
-            .padding()
+            .padding(.top)
         }
         .navigationTitle("Rankings Globales")
         .navigationBarTitleDisplayMode(.inline)
-        .task { // 'task' es la forma moderna de '.onAppear' para tareas 'async'
-            // 5. Carga el ranking cuando la vista aparece
+        .task {
             await viewModel.fetchRankings(filter: selectedFilter)
         }
         .onChange(of: selectedFilter) { newFilter in
-            // 6. Vuelve a cargar si el filtro cambia
             Task {
                 await viewModel.fetchRankings(filter: newFilter)
             }
         }
-        // Necesitamos un 'id' para que el 'onChange' funcione con un 'enum' complejo
-        .id(selectedFilter.id)
+    }
+    
+    var isGlobal: Bool {
+        if case .global = selectedFilter { return true }
+        return false
     }
 }
 
-// MARK: - Sub-Vistas (Componentes)
+// MARK: - Componentes de Diseño
 
-struct LeadersCardView: View {
-    let currentUser: User?
+// 1. Tarjeta Morada "Tu Ranking"
+struct MyRankingCard: View {
+    let currentUser: User
+    let allUsers: [User]
     
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Image(systemName: "trophy.fill")
-                .font(.title)
-                .foregroundColor(.yellow)
-            
-            Text("Tabla de Líderes")
-                .font(.title)
-                .fontWeight(.bold)
-            
-            Text("Compite con los mejores")
-                .font(.subheadline)
-                .foregroundColor(.white.opacity(0.8))
-            
-            Spacer()
-            
-            Text("Tu Ranking Actual")
-                .font(.callout)
-            
-            // TODO: Calcular el ranking real del usuario
-            Text("#3")
-                .font(.system(size: 40, weight: .bold))
-            
-            Text("¡Top 10!")
-                .font(.caption)
+    var myRank: String {
+        if let index = allUsers.firstIndex(where: { $0.id == currentUser.id }) {
+            return "#\(index + 1)"
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 200)
-        .background(Color.purple)
-        .foregroundColor(.white)
-        .cornerRadius(15)
-    }
-}
-
-struct FilterButtonsView: View {
-    @Binding var selectedFilter: RankingFilter
-    
-    var body: some View {
-        HStack {
-            FilterButton(title: "Global", filter: .global, selectedFilter: $selectedFilter)
-            FilterButton(title: "Nacional", filter: .national("El Salvador"), selectedFilter: $selectedFilter)
-            FilterButton(title: "Local", filter: .local, selectedFilter: $selectedFilter)
-        }
-        .background(Color(.systemGray6))
-        .cornerRadius(10)
-    }
-}
-
-// Botón de filtro individual
-struct FilterButton: View {
-    let title: String
-    let filter: RankingFilter
-    @Binding var selectedFilter: RankingFilter
-    
-    var isSelected: Bool {
-        selectedFilter.id == filter.id
+        return "-"
     }
     
     var body: some View {
-        Text(title)
-            .fontWeight(isSelected ? .bold : .regular)
-            .padding(.vertical, 10)
-            .padding(.horizontal, 20)
-            .background(isSelected ? .white : Color.clear)
-            .cornerRadius(8)
-            .onTapGesture {
-                selectedFilter = filter
+        ZStack {
+            LinearGradient(
+                colors: [Color(hex: "6A5AE0"), Color(hex: "342686")],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Image(systemName: "trophy")
+                        .font(.title2)
+                        .foregroundColor(.yellow)
+                    Text("Tabla de Líderes")
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.white)
+                }
+                Text("Compite con los mejores")
+                    .font(.caption)
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.bottom, 15)
+                
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("Tu Ranking Actual")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                        Text(myRank)
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundColor(.white)
+                        Text("¡Sigue así!")
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    Spacer()
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .foregroundColor(.green)
+                        .font(.title2)
+                }
+                .padding()
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(12)
             }
+            .padding(20)
+        }
+        .frame(height: 220)
+        .cornerRadius(20)
+        .padding(.horizontal)
+        .shadow(color: .purple.opacity(0.4), radius: 10, x: 0, y: 5)
     }
 }
 
+// 2. Botones de Filtro
+struct FilterOption: View {
+    let title: String
+    let isActive: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .fontWeight(.semibold)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(isActive ? Color(hex: "6A5AE0") : Color.white)
+                .foregroundColor(isActive ? .white : .black)
+                .cornerRadius(10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: isActive ? 0 : 1)
+                )
+        }
+    }
+}
+
+// 3. El Podio
 struct PodiumView: View {
-    // Recibe exactamente 3 usuarios (Top 3)
     let users: [User]
     
     var body: some View {
-        HStack(alignment: .bottom, spacing: 10) {
+        HStack(alignment: .bottom, spacing: 12) {
             // #2 Plata
-            PodiumCard(user: users[1], rank: 2, color: Color(.systemGray4))
-            
+            if users.indices.contains(1) {
+                PodiumCard(user: users[1], rank: 2, color: Color(hex: "E8E8E8"), height: 160)
+            }
             // #1 Oro
-            PodiumCard(user: users[0], rank: 1, color: .yellow)
-            
+            if users.indices.contains(0) {
+                PodiumCard(user: users[0], rank: 1, color: Color(hex: "FFD700").opacity(0.5), height: 190, isGold: true)
+            }
             // #3 Bronce
-            PodiumCard(user: users[2], rank: 3, color: .orange)
+            if users.indices.contains(2) {
+                PodiumCard(user: users[2], rank: 3, color: Color(hex: "CD7F32").opacity(0.7), height: 140)
+            }
         }
+        .padding(.horizontal)
     }
 }
 
@@ -159,124 +221,101 @@ struct PodiumCard: View {
     let user: User
     let rank: Int
     let color: Color
-    
-    var height: CGFloat {
-        switch rank {
-        case 1: return 150
-        case 2: return 120
-        case 3: return 120
-        default: return 100
-        }
-    }
+    let height: CGFloat
+    var isGold: Bool = false
     
     var body: some View {
         VStack {
-            // TODO: Reemplazar con la foto de perfil
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 40))
-                .foregroundColor(.secondary)
-                .padding(10)
-                .background(Color.white.clipShape(Circle()))
-            
-            Text("#\(rank)")
-                .font(.headline)
-            Text(user.displayName)
-                .font(.subheadline)
-                .fontWeight(.bold)
-            Text("Nv. \(user.level ?? 1)")
-                .font(.caption)
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity)
-        .frame(height: height)
-        .background(color.opacity(0.6))
-        .cornerRadius(12)
-    }
-}
-
-struct RankingListView: View {
-    // Recibe los usuarios del #4 en adelante
-    let users: [User]
-    let currentUser: User?
-    
-    var body: some View {
-        VStack(alignment: .leading) {
-            Text("Todos los Rankings")
-                .font(.title2)
-                .fontWeight(.bold)
-            
-            // El 'ForEach' necesita que 'User' sea 'Identifiable', ¡y ya lo es!
-            // Usamos 'enumerated()' para obtener el 'index' (0, 1, 2...)
-            // y así calcular el ranking real (4, 5, 6...).
-            ForEach(Array(users.enumerated()), id: \.element.id) { index, user in
-                
-                let rank = index + 4 // Sumamos 4 (porque empezamos desde el 3er índice)
-                
-                UserRowView(user: user, rank: rank, isCurrentUser: user.id == currentUser?.id)
-            }
-        }
-    }
-}
-
-struct UserRowView: View {
-    let user: User
-    let rank: Int
-    let isCurrentUser: Bool
-    
-    var body: some View {
-        HStack {
-            Text("#\(rank)")
-                .font(.headline)
-                .frame(width: 40)
-            
-            // TODO: Reemplazar con la foto de perfil
-            Image(systemName: "person.circle.fill")
-                .font(.system(size: 30))
-                .foregroundColor(.secondary)
-            
-            VStack(alignment: .leading) {
-                Text(user.displayName)
+            ZStack {
+                Circle()
+                    .stroke(isGold ? Color.yellow : Color.white, lineWidth: 2)
+                    .frame(width: 50, height: 50)
+                Text("\(rank)")
+                    .font(.title2)
                     .fontWeight(.bold)
-                Text("\(user.pais ?? "??") • Nivel \(user.level ?? 1)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(isGold ? .yellow : .gray)
             }
-            
-            if isCurrentUser {
-                Text("TÚ")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.purple.opacity(0.2))
-                    .foregroundColor(.purple)
-                    .cornerRadius(5)
-            }
+            .offset(y: -15)
             
             Spacer()
             
-            // TODO: Calcular el % de victorias
-            Text("\(user.xp ?? 0)%") // Usando XP como placeholder
+            Text("#\(rank)")
                 .font(.headline)
+                .foregroundColor(.black.opacity(0.7))
+            
+            Text(user.displayName)
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .lineLimit(1)
+                .padding(.horizontal, 2)
+            
+            Text("Nv. \(user.level ?? 1)")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .padding(.bottom, 10)
         }
-        .padding(12)
-        .background(isCurrentUser ? Color.purple.opacity(0.1) : Color(.systemGray6))
-        .cornerRadius(10)
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .background(color)
+        .cornerRadius(15)
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(isGold ? Color.yellow : Color.clear, lineWidth: isGold ? 2 : 0)
+        )
     }
 }
 
-
-// --- Extensiones de apoyo ---
-extension RankingFilter {
-    // Un 'id' para que el 'onChange' y los botones funcionen
-    var id: String {
-        switch self {
-        case .global:
-            return "global"
-        case .national(let country):
-            return "national_\(country)"
-        case .local:
-            return "local"
+// 4. Fila de la Lista
+struct UserRankRow: View {
+    let user: User
+    let rank: Int
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Text("#\(rank)")
+                .font(.subheadline)
+                .fontWeight(.bold)
+                .foregroundColor(.gray)
+                .frame(width: 30)
+            
+            Image(systemName: "person.circle.fill")
+                .font(.system(size: 40))
+                .foregroundColor(.gray.opacity(0.5))
+            
+            VStack(alignment: .leading) {
+                Text(user.displayName)
+                    .fontWeight(.semibold)
+                Text("Nivel \(user.level ?? 1) • \(user.xp ?? 0) XP")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            
+            if rank <= 10 {
+                Image(systemName: "flame.fill")
+                    .foregroundColor(.orange)
+            }
         }
+        .padding()
+        .background(Color.white)
+        .cornerRadius(15)
+        .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
+    }
+}
+
+// Helper para colores Hex
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default: (a, r, g, b) = (1, 1, 1, 0)
+        }
+        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue:  Double(b) / 255, opacity: Double(a) / 255)
     }
 }
