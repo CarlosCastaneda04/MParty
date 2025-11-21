@@ -4,12 +4,17 @@
 //
 //  Created by user285805 on 7/11/25.
 //
+
+
 import SwiftUI
 
 struct RegistrationView: View {
     
-    // 1. RECIBE el "cerebro" (ViewModel)
+    // 1. Recibe el "cerebro" de Autenticación
     @EnvironmentObject var viewModel: AuthViewModel
+    
+    // 2. NUEVO: El cerebro para la ubicación
+    @StateObject private var locationManager = LocationManager()
     
     let role: String
     
@@ -30,11 +35,13 @@ struct RegistrationView: View {
                     .foregroundColor(.secondary)
                     .padding(.bottom, 10)
                 
+                // --- Campo de Nombre ---
                 TextField("Nombre Completo", text: $fullName)
                     .padding(12)
                     .background(Color(.systemGray6))
                     .cornerRadius(10)
                 
+                // --- Campo de Correo ---
                 TextField("Correo Electrónico", text: $email)
                     .padding(12)
                     .background(Color(.systemGray6))
@@ -43,15 +50,40 @@ struct RegistrationView: View {
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
 
-                TextField("País", text: $pais)
-                    .padding(12)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(10)
+                // --- Campo de País (CON AUTODETECCIÓN) ---
+                HStack {
+                    TextField("País", text: $pais)
+                    
+                    // Botón para pedir ubicación
+                    Button {
+                        locationManager.requestLocation()
+                    } label: {
+                        if locationManager.isLoading {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "location.fill")
+                                .foregroundColor(.purple)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                // Escuchamos al manager: Si encuentra país, actualiza el campo
+                .onChange(of: locationManager.country) { newCountry in
+                    if let country = newCountry {
+                        self.pais = country
+                    }
+                }
 
+                // --- Campo de Contraseña ---
                 SecurePasswordView(passwordText: $password, title: "Contraseña")
                 
+                // --- Campo de Confirmar ---
                 SecurePasswordView(passwordText: $confirmPassword, title: "Confirmar Contraseña")
                 
+                // --- Muestra el rol seleccionado ---
                 Text("Tipo de cuenta seleccionado: \(role)")
                     .font(.footnote)
                     .fontWeight(.semibold)
@@ -61,6 +93,7 @@ struct RegistrationView: View {
                     .foregroundColor(.purple)
                     .cornerRadius(8)
                 
+                // --- Botón de Crear Cuenta ---
                 Button {
                     validateAndRegister()
                 } label: {
@@ -84,12 +117,18 @@ struct RegistrationView: View {
                 }
                 .disabled(viewModel.isLoading)
                 
+                // --- Mensajes de Error ---
                 if let error = validationError {
                     Text(error)
                         .foregroundColor(.red)
                         .font(.caption)
                 } else if let error = viewModel.errorMessage {
                     Text(error)
+                        .foregroundColor(.red)
+                        .font(.caption)
+                } else if let locError = locationManager.errorMessage {
+                    // Error de ubicación si falla
+                    Text(locError)
                         .foregroundColor(.red)
                         .font(.caption)
                 }
@@ -110,6 +149,7 @@ struct RegistrationView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
     
+    // --- FUNCIÓN DE VALIDACIÓN ---
     private func validateAndRegister() {
         if fullName.isEmpty || email.isEmpty || pais.isEmpty || password.isEmpty {
             validationError = "Por favor, llena todos los campos."
@@ -132,7 +172,6 @@ struct RegistrationView: View {
         validationError = nil
         
         Task {
-            // 2. Llama al "cerebro" que recibió
             await viewModel.createUser(
                 withEmail: email,
                 password: password,
