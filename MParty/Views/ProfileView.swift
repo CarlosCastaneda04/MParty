@@ -445,16 +445,21 @@ struct EventListMiniCard: View {
     let event: Event
     var body: some View {
         HStack(spacing: 15) {
-            // Imagen pequeña (Placeholder)
-            Color.gray
-                .frame(width: 80, height: 80)
-                .cornerRadius(10)
-                .overlay(
-                    AsyncImage(url: URL(string: "https://picsum.photos/seed/\(event.id ?? "")/200")) { img in
-                        img.resizable().scaledToFill()
-                    } placeholder: { Color.gray }
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+            // Imagen pequeña (CORREGIDO: Ahora usa la URL real)
+            Group {
+                if let bannerURL = event.eventBannerURL, let url = URL(string: bannerURL) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        Color.gray
+                    }
+                } else {
+                    Color.gray // Placeholder si no hay imagen
+                }
+            }
+            .frame(width: 80, height: 80)
+            .cornerRadius(10)
+            .clipped() // Importante para recortar la imagen
             
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -463,7 +468,6 @@ struct EventListMiniCard: View {
                         .fontWeight(.bold)
                         .lineLimit(1)
                     Spacer()
-                    // Badge de Estado
                     Text(event.status == "Disponible" ? "Próximo" : event.status)
                         .font(.caption2)
                         .fontWeight(.bold)
@@ -481,8 +485,7 @@ struct EventListMiniCard: View {
                 HStack {
                     Image(systemName: "calendar")
                         .font(.caption2)
-                    // Necesita Firestore importado o EventDetailView para .dateValue()
-                    // Usamos una fecha formateada simple para evitar errores de import aquí si falta
+                    // Usamos el format simple para evitar errores de importación en esta vista
                     Text(event.eventDate.dateValue().formatted(date: .abbreviated, time: .omitted))
                         .font(.caption2)
                     
@@ -501,8 +504,7 @@ struct EventListMiniCard: View {
         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.gray.opacity(0.1), lineWidth: 1))
     }
-}   
-
+}
 struct ProgressRow: View {
     let title: String
     let value: String

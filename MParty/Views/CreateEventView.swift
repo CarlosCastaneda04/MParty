@@ -7,6 +7,7 @@
 
 
 import SwiftUI
+import PhotosUI // Para el selector de fotos
 
 struct CreateEventView: View {
     
@@ -16,7 +17,7 @@ struct CreateEventView: View {
     // 2. El cerebro para saber QUIÉN crea el evento
     @EnvironmentObject var authViewModel: AuthViewModel
     
-    // 3. NUEVO: El cerebro para la ubicación
+    // 3. El cerebro para la ubicación
     @StateObject private var locationManager = LocationManager()
     
     // 4. Para cerrar la vista (Cancelar, Guardar)
@@ -32,6 +33,10 @@ struct CreateEventView: View {
     @State private var maxPlayers: Int = 16
     @State private var isPaidEvent: Bool = false
     
+    // --- IMAGEN DEL BANNER (NUEVO) ---
+    @State private var selectedBannerItem: PhotosPickerItem?
+    @State private var selectedBannerImage: UIImage?
+    
     // Opciones para los Pickers
     let gameOptions = ["Ajedrez", "Monopoly", "Cartas", "Catan", "Otro"]
     let modeOptions = ["Amistoso", "Competitivo"]
@@ -40,11 +45,59 @@ struct CreateEventView: View {
     var body: some View {
         if let user = authViewModel.currentUser {
             Form {
+                
+                // --- SECCIÓN 0: BANNER DEL EVENTO ---
+                Section {
+                    VStack(spacing: 10) {
+                        if let image = selectedBannerImage {
+                            // Muestra la imagen seleccionada
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(height: 150)
+                                .cornerRadius(10)
+                                .clipped()
+                        } else {
+                            // Placeholder
+                            Rectangle()
+                                .fill(Color(.systemGray5))
+                                .frame(height: 150)
+                                .cornerRadius(10)
+                                .overlay(
+                                    VStack {
+                                        Image(systemName: "photo.badge.plus")
+                                            .font(.system(size: 30))
+                                            .foregroundColor(.purple)
+                                        Text("Añadir Banner")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                )
+                        }
+                    }
+                    .overlay(
+                        // El selector invisible encima
+                        PhotosPicker(selection: $selectedBannerItem, matching: .images) {
+                            Color.clear // Hace que toda el área sea tocable
+                        }
+                    )
+                    .listRowInsets(EdgeInsets()) // Quita márgenes de la lista
+                }
+                .onChange(of: selectedBannerItem) { newItem in
+                    Task {
+                        if let data = try? await newItem?.loadTransferable(type: Data.self) {
+                            if let uiImage = UIImage(data: data) {
+                                selectedBannerImage = uiImage
+                            }
+                        }
+                    }
+                }
+                
                 // --- Sección 1: Información Básica ---
                 Section(header: Text("Información Básica")) {
                     TextField("Nombre del Torneo", text: $title)
                     TextField("Describe tu torneo...", text: $description, axis: .vertical)
-                        .lineLimit(4...)
+                        .lineLimit(3...)
                     Picker("Juego", selection: $gameType) {
                         ForEach(gameOptions, id: \.self) { Text($0) }
                     }
@@ -55,69 +108,56 @@ struct CreateEventView: View {
                     DatePicker(
                         "Fecha y Hora",
                         selection: $eventDate,
-                        in: Date()..., // Solo fechas futuras
+                        in: Date()...,
                         displayedComponents: [.date, .hourAndMinute]
                     )
                 }
                 
-                // --- Sección 3: Ubicación (ACTUALIZADA CON GPS) ---
+                // --- Sección 3: Ubicación ---
                 Section(header: Text("Ubicación")) {
                     HStack {
                         TextField("Dirección del Lugar", text: $location)
                         
-                        // Botón para pedir ubicación
                         Button {
                             locationManager.requestLocation()
                         } label: {
                             if locationManager.isLoading {
-                                ProgressView()
-                                    .scaleEffect(0.8)
+                                ProgressView().scaleEffect(0.8)
                             } else {
-                                Image(systemName: "location.fill")
-                                    .foregroundColor(.purple)
+                                Image(systemName: "location.fill").foregroundColor(.purple)
                             }
                         }
                     }
-                    // Escuchamos cambios en el manager para actualizar el campo de texto
                     .onChange(of: locationManager.address) { newAddress in
                         if let address = newAddress {
                             self.location = address
                         }
                     }
                     
-                    // Muestra error de ubicación si falla
                     if let locError = locationManager.errorMessage {
-                        Text(locError)
-                            .font(.caption)
-                            .foregroundColor(.red)
+                        Text(locError).font(.caption).foregroundColor(.red)
                     }
                 }
                 
                 // --- Sección 4: Configuración ---
-                Section(header: Text("Configuración del Torneo")) {
-                    Picker("Tipo de Torneo", selection: $mode) {
+                Section(header: Text("Configuración")) {
+                    Picker("Tipo", selection: $mode) {
                         ForEach(modeOptions, id: \.self) { Text($0) }
                     }
                     .pickerStyle(.segmented)
                     
-                    Picker("Máximo de Jugadores", selection: $maxPlayers) {
-                        ForEach(playerOptions, id: \.self) { Text("\($0) Jugadores") }
+                    Picker("Jugadores", selection: $maxPlayers) {
+                        ForEach(playerOptions, id: \.self) { Text("\($0)") }
                     }
                     
                     Toggle("Torneo de Pago", isOn: $isPaidEvent)
                 }
                 
-                // --- Sección 5: Disclaimer ---
-                Section {
-                    Text("Al crear este torneo, aceptas: Proporcionar información precisa, Honrar inscripciones, etc.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-                
-                // --- Sección 6: Botones ---
+                // --- Botones ---
                 Section {
                     Button {
                         Task {
+                            // Llama al ViewModel con todos los datos, INCLUYENDO LA IMAGEN
                             let success = await viewModel.createEvent(
                                 title: title,
                                 description: description,
@@ -127,7 +167,8 @@ struct CreateEventView: View {
                                 mode: mode,
                                 maxPlayers: maxPlayers,
                                 isPaidEvent: isPaidEvent,
-                                host: user
+                                host: user,
+                                bannerImage: selectedBannerImage // <-- AQUÍ PASAMOS LA IMAGEN
                             )
                             
                             if success {
@@ -135,11 +176,16 @@ struct CreateEventView: View {
                             }
                         }
                     } label: {
-                        Text("Crear Torneo")
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity)
+                        if viewModel.isLoading {
+                            ProgressView()
+                        } else {
+                            Text("Crear Torneo")
+                                .fontWeight(.bold)
+                                .frame(maxWidth: .infinity)
+                        }
                     }
                     .tint(.purple)
+                    .disabled(title.isEmpty || location.isEmpty)
                     
                     Button("Cancelar", role: .destructive) {
                         dismiss()
@@ -149,13 +195,6 @@ struct CreateEventView: View {
             .navigationTitle("Crear Torneo")
             .navigationBarTitleDisplayMode(.inline)
             .disabled(viewModel.isLoading)
-            .overlay(
-                Group {
-                    if viewModel.isLoading {
-                        ProgressView()
-                    }
-                }
-            )
             .overlay(
                 VStack {
                     if let error = viewModel.errorMessage {

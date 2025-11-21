@@ -13,6 +13,8 @@ struct EventListCard: View {
     
     // Calcula el progreso de 0.0 a 1.0
     var progress: Double {
+        // Evitamos división por cero
+        guard event.maxPlayers > 0 else { return 0.0 }
         return Double(event.currentPlayers) / Double(event.maxPlayers)
     }
     
@@ -21,20 +23,28 @@ struct EventListCard: View {
             
             // --- 1. IMAGEN Y HEADER ---
             ZStack(alignment: .bottomLeading) {
-                // Placeholder de imagen
-                Color.gray
-                    .overlay(
-                        AsyncImage(url: URL(string: "https://picsum.photos/seed/\(event.id ?? "")/600/300")) { img in
-                            img.resizable().aspectRatio(contentMode: .fill)
+                // Imagen (Real o Placeholder)
+                Group {
+                    if let bannerURL = event.eventBannerURL, let url = URL(string: bannerURL) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
                         } placeholder: {
                             Color.gray
                         }
-                    )
-                    .frame(height: 140)
-                    .clipped()
-                    .overlay(
-                        LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
-                    )
+                    } else {
+                        Color.gray
+                            .overlay(
+                                Image(systemName: "photo")
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .font(.largeTitle)
+                            )
+                    }
+                }
+                .frame(height: 140)
+                .clipped()
+                .overlay(
+                    LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .top, endPoint: .bottom)
+                )
                 
                 VStack(alignment: .leading) {
                     // Badge de Modalidad
@@ -68,6 +78,7 @@ struct EventListCard: View {
                 HStack {
                     Image(systemName: "calendar")
                         .foregroundColor(.gray)
+                    // Necesita 'import FirebaseFirestore' para .dateValue()
                     Text(event.eventDate.dateValue(), style: .date)
                     
                     Image(systemName: "clock")

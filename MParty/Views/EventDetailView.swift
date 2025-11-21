@@ -6,14 +6,14 @@
 //
 
 import SwiftUI
-import FirebaseFirestore
+import FirebaseFirestore // Importante para trabajar con Fechas de Firebase
 
 struct EventDetailView: View {
     
     @StateObject private var viewModel: EventDetailViewModel
     @EnvironmentObject var authViewModel: AuthViewModel
     
-    // Para poder regresar manualmente (ya que quitamos la barra por defecto)
+    // Para poder regresar manualmente
     @Environment(\.dismiss) var dismiss
     
     @State private var selectedTab: String = "General"
@@ -31,8 +31,7 @@ struct EventDetailView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         
-                        // 1. HEADER CON IMAGEN Y BADGES
-                        // (Pasa el evento y la acción de dismiss)
+                        // 1. HEADER CON IMAGEN REAL
                         CustomHeaderView(event: viewModel.event, onDismiss: {
                             dismiss()
                         })
@@ -44,7 +43,7 @@ struct EventDetailView: View {
                             InfoCard(event: viewModel.event)
                             
                             // Organizador
-                            OrganizerCard(hostName: viewModel.event.hostName, category: "Diamante") // Placeholder categoría
+                            OrganizerCard(hostName: viewModel.event.hostName)
                             
                             // Pestañas
                             TabSelector(selectedTab: $selectedTab)
@@ -58,21 +57,21 @@ struct EventDetailView: View {
                             // Espacio extra para que el botón flotante no tape el final
                             Spacer().frame(height: 120)
                         }
-                        .padding(.top, 20) // Espacio entre imagen y contenido
-                        .background(Color(.systemGroupedBackground)) // Color de fondo grisáceo suave
+                        .padding(.top, 20)
+                        .background(Color(.systemGroupedBackground))
                     }
                 }
-                .edgesIgnoringSafeArea(.top) // ¡Clave para que la imagen toque el borde superior!
+                .edgesIgnoringSafeArea(.top)
                 
-                // --- 3. BARRA FLOTANTE INFERIOR ---
+                // --- 3. BARRA FLOTANTE INFERIOR (LÓGICA DE BOTONES) ---
                 FooterButtonView(
                     viewModel: viewModel,
                     user: user
                 )
             }
-            // OCULTAR ELEMENTOS NATIVOS
-            .navigationBarHidden(true)        // Oculta la barra de título estándar
-            .toolbar(.hidden, for: .tabBar)   // Oculta la barra de pestañas inferior (iOS 16+)
+            // Ocultar barras nativas para diseño inmersivo
+            .navigationBarHidden(true)
+            .toolbar(.hidden, for: .tabBar)
             .task {
                 await viewModel.fetchEventData(userId: user.id ?? "")
             }
@@ -83,7 +82,7 @@ struct EventDetailView: View {
     }
 }
 
-// MARK: - NUEVO HEADER PERSONALIZADO (Estilo Figma)
+// MARK: - HEADER PERSONALIZADO
 
 struct CustomHeaderView: View {
     let event: Event
@@ -93,21 +92,31 @@ struct CustomHeaderView: View {
         ZStack(alignment: .bottomLeading) {
             
             // A. IMAGEN DE FONDO
-            // (Usamos Color.gray como placeholder, aquí iría tu AsyncImage)
             GeometryReader { geometry in
-                Color.gray // TODO: Cambiar por AsyncImage(url: ...)
-                    .overlay(
-                        // Un gradiente oscuro abajo para que el texto blanco se lea bien
-                        LinearGradient(
-                            gradient: Gradient(colors: [.clear, .black.opacity(0.8)]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                Group {
+                    if let bannerURL = event.eventBannerURL, let url = URL(string: bannerURL) {
+                        AsyncImage(url: url) { image in
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            Color.gray
+                        }
+                    } else {
+                        Color.gray // Placeholder si no hay imagen
+                    }
+                }
+                .frame(width: geometry.size.width, height: 300)
+                .clipped()
+                .overlay(
+                    LinearGradient(
+                        gradient: Gradient(colors: [.clear, .black.opacity(0.8)]),
+                        startPoint: .top,
+                        endPoint: .bottom
                     )
+                )
             }
-            .frame(height: 300) // Altura fija para el header
+            .frame(height: 300)
             
-            // B. BOTÓN ATRÁS (Top Left)
+            // B. BOTÓN ATRÁS
             Button(action: { onDismiss() }) {
                 Image(systemName: "arrow.left")
                     .font(.title3)
@@ -117,16 +126,13 @@ struct CustomHeaderView: View {
                     .clipShape(Circle())
                     .shadow(radius: 4)
             }
-            .padding(.top, 50) // Ajuste para Safe Area (Isla dinámica/Notch)
+            .padding(.top, 50)
             .padding(.leading, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             
-            // C. TÍTULO Y BADGES (Bottom Left)
+            // C. TÍTULO Y BADGES
             VStack(alignment: .leading, spacing: 8) {
-                
-                // Badges
                 HStack {
-                    // Badge Modalidad (Rojo)
                     Text(event.mode)
                         .font(.caption)
                         .fontWeight(.bold)
@@ -136,7 +142,6 @@ struct CustomHeaderView: View {
                         .foregroundColor(.white)
                         .cornerRadius(4)
                     
-                    // Badge Juego (Blanco)
                     Text(event.gameType)
                         .font(.caption)
                         .fontWeight(.bold)
@@ -147,66 +152,46 @@ struct CustomHeaderView: View {
                         .cornerRadius(4)
                 }
                 
-                // Título Grande
                 Text(event.title)
                     .font(.title)
                     .fontWeight(.bold)
                     .foregroundColor(.white)
                     .shadow(radius: 2)
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 20)
+            .padding(20)
         }
         .frame(height: 300)
     }
 }
 
-// MARK: - COMPONENTES ESTILIZADOS
+// MARK: - COMPONENTES
 
 struct InfoCard: View {
     let event: Event
     var body: some View {
         VStack(spacing: 0) {
-            // Fila Fecha
             HStack {
-                Image(systemName: "calendar")
-                    .foregroundColor(.purple)
-                    .frame(width: 30)
+                Image(systemName: "calendar").foregroundColor(.purple).frame(width: 30)
                 VStack(alignment: .leading) {
-                    Text("Fecha")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(event.eventDate.dateValue(), style: .date)
-                        .fontWeight(.semibold)
+                    Text("Fecha").font(.caption).foregroundColor(.secondary)
+                    Text(event.eventDate.dateValue(), style: .date).fontWeight(.semibold)
                 }
                 Spacer()
-                
-                // Hora (Lado derecho)
-                Image(systemName: "clock")
-                    .foregroundColor(.green)
+                Image(systemName: "clock").foregroundColor(.green)
                 VStack(alignment: .trailing) {
-                    Text("Hora")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(event.eventDate.dateValue(), style: .time)
-                        .fontWeight(.semibold)
+                    Text("Hora").font(.caption).foregroundColor(.secondary)
+                    Text(event.eventDate.dateValue(), style: .time).fontWeight(.semibold)
                 }
             }
             .padding()
             
-            Divider().padding(.leading, 50) // Línea separadora
+            Divider().padding(.leading, 50)
             
-            // Fila Ubicación
             HStack {
-                Image(systemName: "mappin.and.ellipse")
-                    .foregroundColor(.gray)
-                    .frame(width: 30)
+                Image(systemName: "mappin.and.ellipse").foregroundColor(.gray).frame(width: 30)
                 VStack(alignment: .leading) {
-                    Text("Ubicación")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Text(event.location)
-                        .fontWeight(.semibold)
+                    Text("Ubicación").font(.caption).foregroundColor(.secondary)
+                    Text(event.location).fontWeight(.semibold)
                 }
                 Spacer()
             }
@@ -221,30 +206,14 @@ struct InfoCard: View {
 
 struct OrganizerCard: View {
     let hostName: String
-    let category: String // "Oro", "Diamante", etc.
-    
     var body: some View {
         HStack(spacing: 15) {
-            // Avatar
-            Image(systemName: "person.crop.circle.fill") // Placeholder
-                .resizable()
-                .frame(width: 50, height: 50)
-                .foregroundColor(.orange) // Color placeholder
+            Image(systemName: "person.crop.circle.fill")
+                .resizable().frame(width: 50, height: 50).foregroundColor(.orange)
             
             VStack(alignment: .leading) {
-                Text("Organizador")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(hostName)
-                    .font(.headline)
-                
-                // Badge Categoría pequeña
-                Text(category.capitalized)
-                    .font(.caption2)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.gray.opacity(0.2))
-                    .cornerRadius(4)
+                Text("Organizador").font(.caption).foregroundColor(.secondary)
+                Text(hostName).font(.headline)
             }
             Spacer()
         }
@@ -260,36 +229,24 @@ struct TabSelector: View {
     @Binding var selectedTab: String
     var body: some View {
         HStack(spacing: 0) {
-            // Botón General
             Button(action: { selectedTab = "General" }) {
-                Text("General")
-                    .font(.subheadline)
-                    .fontWeight(selectedTab == "General" ? .semibold : .regular)
+                Text("General").font(.subheadline).fontWeight(selectedTab == "General" ? .semibold : .regular)
                     .foregroundColor(selectedTab == "General" ? .black : .gray)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(selectedTab == "General" ? Color.white : Color.clear)
                     .cornerRadius(20)
                     .shadow(color: selectedTab == "General" ? .black.opacity(0.1) : .clear, radius: 2)
             }
-            
-            // Botón Jugadores
             Button(action: { selectedTab = "Jugadores" }) {
-                Text("Jugadores")
-                    .font(.subheadline)
-                    .fontWeight(selectedTab == "Jugadores" ? .semibold : .regular)
+                Text("Jugadores").font(.subheadline).fontWeight(selectedTab == "Jugadores" ? .semibold : .regular)
                     .foregroundColor(selectedTab == "Jugadores" ? .black : .gray)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
                     .background(selectedTab == "Jugadores" ? Color.white : Color.clear)
                     .cornerRadius(20)
                     .shadow(color: selectedTab == "Jugadores" ? .black.opacity(0.1) : .clear, radius: 2)
             }
         }
-        .padding(4)
-        .background(Color(.systemGray6))
-        .cornerRadius(25)
-        .padding(.horizontal)
+        .padding(4).background(Color(.systemGray6)).cornerRadius(25).padding(.horizontal)
     }
 }
 
@@ -297,24 +254,16 @@ struct DetailsCard: View {
     let event: Event
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Sobre este Torneo")
-                .font(.headline)
-            
-            Text(event.description)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .lineSpacing(4)
-            
+            Text("Sobre este Torneo").font(.headline)
+            Text(event.description).font(.subheadline).foregroundColor(.secondary).lineSpacing(4)
             Divider().padding(.vertical, 5)
             
-            // Grilla de detalles
             VStack(spacing: 12) {
                 DetailRow(title: "Tipo de Juego", value: event.gameType)
                 DetailRow(title: "Modalidad", value: event.mode)
                 DetailRow(title: "Máx. Jugadores", value: "\(event.maxPlayers)")
                 DetailRow(title: "Estado", value: event.status)
                 
-                // Precio (si aplica)
                 if let fee = event.entryFee, event.isPaidEvent {
                     DetailRow(title: "Inscripción", value: "$\(String(format: "%.2f", fee))")
                 } else {
@@ -322,105 +271,36 @@ struct DetailsCard: View {
                 }
             }
         }
-        .padding(20)
-        .background(Color.white)
-        .cornerRadius(20) // Más redondeado arriba
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-        .padding(.horizontal)
+        .padding(20).background(Color.white).cornerRadius(20).shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2).padding(.horizontal)
     }
 }
 
-// --- BOTTOM BAR (PIE DE PÁGINA) MEJORADO ---
-struct FooterButtonView: View {
-    @ObservedObject var viewModel: EventDetailViewModel
-    let user: User
-    
+struct PlayersListView: View {
+    let participants: [Participant]
     var body: some View {
-        VStack(spacing: 15) {
+        VStack(alignment: .leading) {
+            Text("Jugadores Inscritos (\(participants.count))").font(.headline).padding(.bottom, 5)
             
-            // Info de Disponibles y Precio
-            HStack {
-                Image(systemName: "person.2")
-                    .foregroundColor(.gray)
-                Text("Disponibles: \(viewModel.event.maxPlayers - viewModel.participants.count)")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent {
-                    Text("$\(String(format: "%.2f", fee))")
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.green)
-                } else {
-                    Text("Gratis")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color.green)
-                        .cornerRadius(8)
-                }
-            }
-            .padding(.horizontal)
-            
-            // Mensaje de error si existe
-            if let error = viewModel.errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-            
-            // El Botón Grande
-            if user.role == "Organizador" {
-                Text("Los organizadores no pueden unirse a torneos")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(12)
-                
-            } else if viewModel.hasCurrentUserJoined {
-                Button {
-                    Task { await viewModel.cancelParticipation(userId: user.id ?? "") }
-                } label: {
-                    Text("Cancelar Participación")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.red)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.red.opacity(0.1))
-                        .cornerRadius(12)
-                }
-                
+            if participants.isEmpty {
+                Text("¡Sé el primero en unirte!").font(.caption).foregroundColor(.secondary).padding().frame(maxWidth: .infinity, alignment: .center)
             } else {
-                Button {
-                    Task { await viewModel.joinEvent(user: user) }
-                } label: {
-                    Text("Unirme al Torneo")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding()
-                        .background(Color.purple)
-                        .cornerRadius(12)
+                ForEach(participants) { player in
+                    HStack {
+                        Text("#\(player.rank > 0 ? String(player.rank) : "-")").font(.caption).foregroundColor(.gray).frame(width: 30)
+                        VStack(alignment: .leading) {
+                            Text(player.displayName).fontWeight(.semibold)
+                            Text("Nivel \(player.level) • Rank \(player.rank)").font(.caption).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding().background(Color.white).cornerRadius(12).shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
                 }
             }
         }
-        .padding(.top, 20)
-        .padding(.bottom, 10) // Espacio extra abajo para iPhones sin botón
         .padding(.horizontal)
-        .background(Color.white)
-        // Sombra superior para separar del contenido
-        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
     }
 }
 
-// Pequeño helper para las filas
 struct DetailRow: View {
     let title: String
     let value: String
@@ -433,47 +313,69 @@ struct DetailRow: View {
     }
 }
 
-// Lista de jugadores (sin cambios, pero necesaria para que compile)
-struct PlayersListView: View {
-    let participants: [Participant]
+// --- BOTTOM BAR (PIE DE PÁGINA) CON LÓGICA DE ROLES ---
+struct FooterButtonView: View {
+    @ObservedObject var viewModel: EventDetailViewModel
+    let user: User
+    
     var body: some View {
-        VStack(alignment: .leading) {
-            Text("Jugadores Inscritos (\(participants.count))")
-                .font(.headline)
-                .padding(.bottom, 5)
+        VStack(spacing: 15) {
             
-            if participants.isEmpty {
-                Text("¡Sé el primero en unirte!")
-                    .font(.caption)
+            // Info de Disponibles
+            HStack {
+                Image(systemName: "person.2").foregroundColor(.gray)
+                Text("Disponibles: \(viewModel.event.maxPlayers - viewModel.participants.count)").font(.subheadline).foregroundColor(.secondary)
+                Spacer()
+                
+                if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent {
+                    Text("$\(String(format: "%.2f", fee))").font(.title3).fontWeight(.bold).foregroundColor(.green)
+                } else {
+                    Text("Gratis").font(.headline).foregroundColor(.white).padding(.horizontal, 10).padding(.vertical, 4).background(Color.green).cornerRadius(8)
+                }
+            }
+            .padding(.horizontal)
+            
+            if let error = viewModel.errorMessage {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+            
+            // --- BOTONES LÓGICOS ---
+            if user.role == "Organizador" {
+                // Caso 1: Es Organizador -> Mensaje Informativo (Botón bloqueado visualmente)
+                Text("Los organizadores no pueden unirse a torneos")
+                    .font(.subheadline)
                     .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity)
                     .padding()
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else {
-                ForEach(participants) { player in
-                    HStack {
-                        // Número de ranking (placeholder)
-                        Text("#\(player.rank > 0 ? String(player.rank) : "-")")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                            .frame(width: 30)
-                        
-                        VStack(alignment: .leading) {
-                            Text(player.displayName)
-                                .fontWeight(.semibold)
-                            Text("Nivel \(player.level) • Rank \(player.rank)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding()
-                    .background(Color.white)
+                    .background(Color(.systemGray6))
                     .cornerRadius(12)
-                    .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
+                
+            } else if viewModel.hasCurrentUserJoined {
+                // Caso 2: Es Jugador Y YA SE UNIÓ -> Botón de Cancelar
+                Button {
+                    Task { await viewModel.cancelParticipation(userId: user.id ?? "") }
+                } label: {
+                    Text("Cancelar Participación")
+                        .font(.headline).fontWeight(.bold).foregroundColor(.red)
+                        .frame(maxWidth: .infinity).padding()
+                        .background(Color.red.opacity(0.1)).cornerRadius(12)
+                }
+                
+            } else {
+                // Caso 3: Es Jugador Y NO SE HA UNIDO -> Botón de Unirse
+                Button {
+                    Task { await viewModel.joinEvent(user: user) }
+                } label: {
+                    Text("Unirme al Torneo")
+                        .font(.headline).fontWeight(.bold).foregroundColor(.white)
+                        .frame(maxWidth: .infinity).padding()
+                        .background(Color.purple).cornerRadius(12)
                 }
             }
         }
-        .padding(.horizontal)
+        .padding(.top, 20).padding(.bottom, 10).padding(.horizontal)
+        .background(Color.white)
+        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
     }
 }
 

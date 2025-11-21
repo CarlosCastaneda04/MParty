@@ -310,12 +310,24 @@ struct EventCardView: View {
     
     var body: some View {
         VStack(alignment: .leading) {
-            Color.secondary
-                .frame(height: 150)
-                .overlay(
-                    Text("Imagen del Evento (Próximamente)")
-                        .foregroundColor(.white)
-                )
+            // Imagen (CORREGIDO: Ahora usa la URL real)
+            Group {
+                if let bannerURL = event.eventBannerURL, let url = URL(string: bannerURL) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.gray.overlay(ProgressView())
+                    }
+                } else {
+                    Color.secondary
+                        .overlay(
+                            Text("Sin Imagen")
+                                .foregroundColor(.white)
+                        )
+                }
+            }
+            .frame(height: 150)
+            .clipped() // Recorta lo que sobre
             
             Text(event.title)
                 .font(.headline)
