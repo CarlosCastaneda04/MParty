@@ -12,13 +12,12 @@ struct HomeView: View {
     // 1. Recibe el AuthViewModel para saber el rol
     @EnvironmentObject var authViewModel: AuthViewModel
     
-    // 2. NUEVO: Inyecta el cerebro de Eventos
+    // 2. Inyecta el cerebro de Eventos
     @StateObject private var eventViewModel = EventViewModel()
     
     @State private var searchText = ""
     
     var body: some View {
-        // Usamos un 'if let' para asegurarnos de que tenemos los datos del usuario
         if let user = authViewModel.currentUser {
             
             NavigationStack {
@@ -28,14 +27,19 @@ struct HomeView: View {
                         TopBarView(user: user)
                         SearchBarView(searchText: $searchText)
                         
+                        // --- 3. PANEL DE ESTADÍSTICAS (SEGÚN ROL) ---
                         if user.role == "Organizador" {
-                            HostStatsView(user: user)
+                            // Vista para el Host (AHORA RECIBE EL VIEWMODEL)
+                            HostStatsView(user: user, eventViewModel: eventViewModel)
+                        } else {
+                            // Vista para el Jugador
+                            PlayerHomeStatsView(user: user)
                         }
                         
-                        // 3. ACTUALIZADO: Pasa el 'user'
+                        // 4. Botones de Acción
                         HomeActionButtonsView(user: user)
                         
-                        // 4. ACTUALIZADO: Pasa el ViewModel
+                        // 5. Sección Cerca de Ti
                         NearbyEventsView(viewModel: eventViewModel)
                         
                         Spacer()
@@ -45,8 +49,18 @@ struct HomeView: View {
                 .navigationTitle("MParty")
                 .navigationBarHidden(true)
                 .task {
-                    // 5. NUEVO: Carga los eventos cuando aparece el Home
+                    // 1. Carga TODOS los eventos
                     await eventViewModel.fetchEvents()
+                    
+                    // 2. Recarga datos del usuario (para ranking)
+                    if let uid = user.id {
+                        await authViewModel.fetchUser(uid: uid)
+                        
+                        // 3. NUEVO: Si es organizador, calcula sus estadísticas
+                        if user.role == "Organizador" {
+                            eventViewModel.fetchOrganizerStats(hostId: uid)
+                        }
+                    }
                 }
             }
         } else {
@@ -55,27 +69,114 @@ struct HomeView: View {
     }
 }
 
-// --- Vista Previa ---
-// (Comentada para evitar errores de 'init' complejos)
-/*
-struct HomeView_Previews: PreviewProvider {
-    static var previews: some View {
-        let viewModel = AuthViewModel()
-        viewModel.currentUser = User(
-            id: "123", email: "host@test.com", displayName: "Host de Prueba",
-            role: "host", pais: "El Salvador", hostCategory: "Oro"
-        )
-        
-        return HomeView()
-            .environmentObject(viewModel)
-    }
-}
-*/
-
-
 // MARK: - Componentes de la Vista (Sub-vistas)
 
-// --- 1. Barra Superior (Sin cambios) ---
+// --- VISTA DE ESTADÍSTICAS PARA JUGADOR (HOME) ---
+struct PlayerHomeStatsView: View {
+    let user: User
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            HStack(spacing: 15) {
+                // 1. Ranking Global (Morado)
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Ranking Global")
+                            .font(.caption)
+                            .foregroundColor(.white.opacity(0.8))
+                        Spacer()
+                        Image(systemName: "chart.line.uptrend.xyaxis")
+                            .foregroundColor(.green)
+                            .font(.caption)
+                    }
+                    
+                    Text("#\(user.globalRank ?? 0 > 0 ? String(user.globalRank!) : "-")")
+                        .font(.system(size: 32, weight: .bold))
+                        .foregroundColor(.white)
+                    
+                    Text("↑ 2 desde la semana pasada")
+                        .font(.caption2)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 110)
+                .background(Color(hex: "6A5AE0"))
+                .cornerRadius(15)
+                
+                // 2. % Victorias (Blanco)
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("% Victorias")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                    }
+                    
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(String(format: "%.0f", user.winRate))
+                            .font(.system(size: 32, weight: .bold))
+                        Text("%")
+                            .font(.headline)
+                            .foregroundColor(.gray)
+                    }
+                    
+                    let losses = (user.tournamentsPlayed ?? 0) - (user.tournamentsWon ?? 0)
+                    Text("\(user.tournamentsWon ?? 0)V - \(losses)D")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 110)
+                .background(Color.white)
+                .cornerRadius(15)
+                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+            }
+            
+            // 3. Nivel (Largo abajo)
+            HStack {
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack {
+                        Text("Nivel")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                        Spacer()
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.yellow)
+                            .font(.caption)
+                    }
+                    
+                    Text("\(user.level ?? 1)")
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Color.gray.opacity(0.2))
+                                .frame(height: 6)
+                            
+                            Capsule()
+                                .fill(Color.orange)
+                                .frame(width: geo.size.width * (Double((user.xp ?? 0) % 100) / 100.0), height: 6)
+                        }
+                    }
+                    .frame(height: 6)
+                }
+            }
+            .padding()
+            .background(Color.white)
+            .cornerRadius(15)
+            .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        }
+    }
+}
+
+// --- 1. Barra Superior ---
 struct TopBarView: View {
     let user: User
     var body: some View {
@@ -93,7 +194,7 @@ struct TopBarView: View {
     }
 }
 
-// --- 2. Barra de Búsqueda (Sin cambios) ---
+// --- 2. Barra de Búsqueda ---
 struct SearchBarView: View {
     @Binding var searchText: String
     var body: some View {
@@ -108,22 +209,32 @@ struct SearchBarView: View {
     }
 }
 
-// --- 3. Estadísticas del Host (Sin cambios) ---
+// --- 3. Estadísticas del Host (ACTUALIZADA CON DATOS REALES) ---
 struct HostStatsView: View {
     let user: User
+    @ObservedObject var eventViewModel: EventViewModel // Recibe el ViewModel
+    
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            Text("Tus Estadísticas de Organizador") //...
-            // ... (el resto del código de esta vista se queda igual) ...
+            Text("Tus Estadísticas de Organizador")
+                .font(.headline)
+            
             HStack(spacing: 15) {
-                StatCard(title: "Torneos Creados", value: "12", icon: "trophy.fill", color: .purple)
-                StatCard(title: "Participantes", value: "234", icon: "person.2.fill", color: .green)
+                // DATOS REALES DEL VIEWMODEL
+                StatCard(title: "Torneos Creados", value: "\(eventViewModel.createdCount)", icon: "trophy.fill", color: .purple)
+                StatCard(title: "Participantes", value: "\(eventViewModel.totalPlayersCount)", icon: "person.2.fill", color: .green)
             }
+            
             HStack {
-                Image(systemName: "star.fill") // ...
+                Image(systemName: "star.fill")
+                    .font(.title)
+                    .foregroundColor(.yellow)
                 VStack(alignment: .leading) {
-                    Text("Categoría") // ...
-                    Text(user.hostCategory ?? "Bronce") // ...
+                    Text("Categoría")
+                        .font(.caption)
+                    Text(user.hostCategory ?? "Bronce")
+                        .font(.title2)
+                        .fontWeight(.bold)
                 }
                 Spacer()
             }
@@ -134,22 +245,18 @@ struct HostStatsView: View {
     }
 }
 
-// --- 4. Botones de Acción (CON NAVEGACIÓN A "CREAR") ---
+// --- 4. Botones de Acción ---
 struct HomeActionButtonsView: View {
     let user: User
     
     var body: some View {
         HStack(spacing: 10) {
-            // --- MODIFICACIÓN CLAVE ---
-            // Solo se muestra si es 'host'
             if user.role == "Organizador" {
-                // Ahora es un NavigationLink
                 NavigationLink(destination: CreateEventView()) {
                     ActionButton(title: "Crear Torneo", icon: "plus", color: .purple)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            // --- FIN DE LA MODIFICACIÓN ---
             
             NavigationLink(destination: RankingView()) {
                 ActionButton(title: "Rankings", icon: "chart.bar.xaxis", color: .green)
@@ -164,10 +271,8 @@ struct HomeActionButtonsView: View {
     }
 }
 
-// --- 5. Sección Cerca de Ti (CON DATOS REALES) ---
+// --- 5. Sección Cerca de Ti ---
 struct NearbyEventsView: View {
-    
-    // Recibe el ViewModel
     @ObservedObject var viewModel: EventViewModel
     
     var body: some View {
@@ -177,39 +282,34 @@ struct NearbyEventsView: View {
                     .font(.title2)
                     .fontWeight(.bold)
                 Spacer()
-                Button("Ver Todos") { /* TODO: Navegar */ }
+                Button("Ver Todos") { /* TODO */ }
             }
             
-            // --- MODIFICACIÓN CLAVE ---
-            // Muestra los eventos leídos de Firebase
             if viewModel.isLoading {
-                ProgressView() // Muestra 'cargando'
+                ProgressView()
             } else if viewModel.events.isEmpty {
                 Text("¡Aún no hay eventos! Sé el primero en crear uno.")
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding()
             } else {
-                // Hay eventos, los muestra en un ForEach
                 ForEach(viewModel.events) { event in
-                    // Cada tarjeta es un NavigationLink a la vista de detalle
                     NavigationLink(destination: EventDetailView(event: event)) {
                         EventCardView(event: event)
                     }
-                    .buttonStyle(PlainButtonStyle()) // Quita el tinte azul
+                    .buttonStyle(PlainButtonStyle())
                 }
             }
         }
     }
 }
 
-// --- TARJETA DE EVENTO (NUEVA) ---
+// --- TARJETA DE EVENTO ---
 struct EventCardView: View {
     let event: Event
     
     var body: some View {
         VStack(alignment: .leading) {
-            // Placeholder de la imagen
             Color.secondary
                 .frame(height: 150)
                 .overlay(
@@ -237,7 +337,7 @@ struct EventCardView: View {
 }
 
 
-// MARK: - Piezas Reutilizables (Sin cambios)
+// MARK: - Piezas Reutilizables
 
 struct StatCard: View {
     let title: String

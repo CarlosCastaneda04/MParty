@@ -8,6 +8,7 @@
 import Foundation
 import FirebaseFirestore
 import Combine
+import FirebaseAuth
 
 @MainActor
 class RankingViewModel: ObservableObject {
@@ -19,56 +20,54 @@ class RankingViewModel: ObservableObject {
     private var db = Firestore.firestore()
     
     func fetchRankings(filter: RankingFilter) async {
-        self.isLoading = true
-        self.users = []
-        self.errorMessage = nil
-        
-        // 1. Empezamos la consulta a la colección 'users'
-        var query: Query = db.collection("users")
-        
-        // 2. FILTRO CLAVE: Solo mostramos "Jugadores"
-        // (Asegúrate de que en Firebase el rol esté guardado como "Jugador" o "player")
-        // Si usas "Jugador" en el registro, déjalo así. Si usas "player", cámbialo.
-        query = query.whereField("role", isEqualTo: "Jugador")
-        
-        // --- Lógica de Filtros Geográficos ---
-        switch filter {
-        case .global:
-            // No filtramos por país, traemos a todos los jugadores del mundo
-            break
+            self.isLoading = true
+            self.users = []
+            self.errorMessage = nil
             
-        case .national(let country):
-            // Filtramos por el país del usuario actual
-            query = query.whereField("pais", isEqualTo: country)
-        }
-        
-        // 3. ORDENAMIENTO: El que tenga más XP va primero
-        query = query.order(by: "xp", descending: true)
-        query = query.limit(to: 50) // Top 50 para no sobrecargar
-        
-        do {
-            let snapshot = try await query.getDocuments()
+            var query: Query = db.collection("users")
+            query = query.whereField("role", isEqualTo: "Jugador")
             
-            self.users = snapshot.documents.compactMap { doc in
-                let data = doc.data()
-                let uid = doc.documentID
-                var user = User(uid: uid, dictionary: data)
-                
-                // Asignamos el ranking basado en el orden de la lista (1, 2, 3...)
-                // Esto es solo visual, no se guarda en la base de datos aquí
-                // El índice 0 es el rank 1.
-                return user
+            switch filter {
+            case .global: break
+            case .national(let country):
+                query = query.whereField("pais", isEqualTo: country)
             }
             
-        } catch {
-            print("DEBUG: Falló al cargar ranking: \(error.localizedDescription)")
-            // Nota: Si ves un error de "index", revisa la consola de Xcode,
-            // Firebase te dará un link para crear el índice necesario automáticamente.
-            self.errorMessage = "Error al cargar. Verifica tu conexión."
+            query = query.order(by: "xp", descending: true)
+            query = query.limit(to: 50)
+            
+            do {
+                let snapshot = try await query.getDocuments()
+                
+                self.users = snapshot.documents.compactMap { doc in
+                    let data = doc.data()
+                    let uid = doc.documentID
+                    return User(uid: uid, dictionary: data)
+                }
+                
+                // --- NUEVO: Actualizar el ranking del usuario actual en Firebase ---
+                // Obtenemos el ID del usuario actual
+                if let currentUserID = Auth.auth().currentUser?.uid {
+                    // Buscamos en qué posición quedó en la lista que acabamos de bajar
+                    if let index = self.users.firstIndex(where: { $0.id == currentUserID }) {
+                        let newRank = index + 1
+                        
+                        // Solo actualizamos si el ranking cambió para ahorrar escrituras
+                        // (Nota: Esto es una simplificación, idealmente verificaríamos el valor anterior)
+                        try? await db.collection("users").document(currentUserID).updateData([
+                            "globalRank": newRank
+                        ])
+                    }
+                }
+                // ------------------------------------------------------------------
+                
+            } catch {
+                print("DEBUG: Falló al cargar ranking: \(error.localizedDescription)")
+                self.errorMessage = "Error al cargar ranking."
+            }
+            
+            self.isLoading = false
         }
-        
-        self.isLoading = false
-    }
 }
 
 // --- Filtros Actualizados (Sin Local) ---
