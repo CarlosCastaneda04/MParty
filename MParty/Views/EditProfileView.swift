@@ -10,22 +10,24 @@ import PhotosUI // Para el selector de fotos
 
 struct EditProfileView: View {
     
-    // 1. Recibe el "cerebro"
+    // 1. Recibe el "cerebro" de Autenticación
     @EnvironmentObject var authViewModel: AuthViewModel
     
-    // 2. Para cerrar la vista (Cancelar, Guardar)
+    // 2. NUEVO: Inicia el cerebro de Ubicación
+    @StateObject private var locationManager = LocationManager()
+    
+    // 3. Para cerrar la vista (Cancelar, Guardar)
     @Environment(\.dismiss) var dismiss
     
-    // 3. States para los campos editables
+    // 4. States para los campos editables
     @State private var fullName: String = ""
     @State private var pais: String = ""
     
-    // 4. States para el selector de fotos
+    // 5. States para el selector de fotos
     @State private var selectedImageItem: PhotosPickerItem?
-    @State private var selectedProfileImage: UIImage? // La imagen que el usuario eligió
+    @State private var selectedProfileImage: UIImage?
     
     var body: some View {
-        // 5. El 'user' actual
         if let user = authViewModel.currentUser {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 20) {
@@ -33,8 +35,9 @@ struct EditProfileView: View {
                     // --- 1. Sección de Foto ---
                     PhotoPickerView(user: user, selectedProfileImage: $selectedProfileImage, selectedImageItem: $selectedImageItem)
                     
-                    // --- 2. Información Personal ---
-                    PersonalDataView(fullName: $fullName, pais: $pais, user: user)
+                    // --- 2. Información Personal (CON UBICACIÓN) ---
+                    // Pasamos el locationManager aquí
+                    PersonalDataView(fullName: $fullName, pais: $pais, user: user, locationManager: locationManager)
                     
                     // --- 3. Estadísticas (No editable) ---
                     StatsPreviewView(user: user)
@@ -59,7 +62,7 @@ struct EditProfileView: View {
                             }
                         },
                         onCancel: {
-                            dismiss() // Solo cierra la vista
+                            dismiss()
                         },
                         isLoading: authViewModel.isLoading
                     )
@@ -70,19 +73,24 @@ struct EditProfileView: View {
                             .font(.caption)
                             .foregroundColor(.red)
                     }
+                    
+                    // Muestra error de ubicación si falla
+                    if let locError = locationManager.errorMessage {
+                        Text(locError)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
                 }
             }
             .navigationTitle("Editar Perfil")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                // 6. Pre-llena los campos cuando la vista aparece
+                // Pre-llena los campos cuando la vista aparece
                 self.fullName = user.displayName
                 self.pais = user.pais ?? ""
-                
-                // Limpia cualquier error viejo
                 authViewModel.errorMessage = nil
             }
-            .background(Color(.systemGray6)) // Color de fondo de la pantalla
+            .background(Color(.systemGray6))
             
         } else {
             Text("Cargando...")
@@ -91,7 +99,7 @@ struct EditProfileView: View {
 }
 
 
-// MARK: - Sub-Vistas (para mantener el código limpio)
+// MARK: - Sub-Vistas
 
 struct PhotoPickerView: View {
     let user: User
@@ -100,15 +108,12 @@ struct PhotoPickerView: View {
     
     var body: some View {
         VStack(spacing: 10) {
-            // Muestra la imagen seleccionada O la foto de perfil actual
             Group {
                 if let image = selectedProfileImage {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
                 } else if let photoURL = user.profilePhotoURL, let url = URL(string: photoURL) {
-                    // Carga la foto de perfil de Firebase (requiere SDWebImageSwiftUI o AsyncImage)
-                    // Usaremos un placeholder por ahora:
                     AsyncImage(url: url) { image in
                         image.resizable().scaledToFill()
                     } placeholder: {
@@ -117,7 +122,7 @@ struct PhotoPickerView: View {
                             .foregroundColor(.gray)
                     }
                 } else {
-                    Image(systemName: "person.circle.fill") // Placeholder
+                    Image(systemName: "person.circle.fill")
                         .font(.system(size: 80))
                         .foregroundColor(.gray)
                 }
@@ -125,14 +130,13 @@ struct PhotoPickerView: View {
             .frame(width: 100, height: 100)
             .clipShape(Circle())
             .overlay(
-                // --- El Selector de Fotos (PhotosUI) ---
                 PhotosPicker(selection: $selectedImageItem, matching: .images) {
                     Image(systemName: "camera.circle.fill")
                         .font(.system(size: 30))
                         .foregroundColor(.purple)
                         .background(Color.white.clipShape(Circle()))
                 }
-                .offset(x: 35, y: 35) // Ajusta la posición del ícono
+                .offset(x: 35, y: 35)
             )
             
             Text("Haz clic en el ícono de la cámara para cambiar tu foto de perfil")
@@ -149,7 +153,6 @@ struct PhotoPickerView: View {
         .cornerRadius(12)
         .padding(.horizontal)
         .onChange(of: selectedImageItem) { newItem in
-            // Cuando el usuario elige una foto, la carga
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self) {
                     if let uiImage = UIImage(data: data) {
@@ -161,17 +164,21 @@ struct PhotoPickerView: View {
     }
 }
 
+// --- VISTA DE DATOS PERSONALES (ACTUALIZADA CON UBICACIÓN) ---
 struct PersonalDataView: View {
     @Binding var fullName: String
     @Binding var pais: String
     let user: User
+    
+    // Recibimos el Manager
+    @ObservedObject var locationManager: LocationManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             Text("Información Personal")
                 .font(.headline)
             
-            // Nombre Completo (Editable)
+            // Nombre Completo
             Text("Nombre Completo")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -180,33 +187,54 @@ struct PersonalDataView: View {
                 .background(Color(.systemGray6))
                 .cornerRadius(8)
             
-            // Correo (No editable)
+            // Correo
             Text("Correo Electrónico")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            TextField("", text: .constant(user.email)) // .constant para que no sea editable
+            TextField("", text: .constant(user.email))
                 .padding(12)
-                .background(Color(.systemGray5)) // Color diferente
+                .background(Color(.systemGray5))
                 .cornerRadius(8)
-                .disabled(true) // Deshabilitado
+                .disabled(true)
             
-            // País (Editable)
+            // --- PAÍS CON BOTÓN DE UBICACIÓN ---
             Text("País")
                 .font(.caption)
                 .foregroundColor(.secondary)
-            TextField("País", text: $pais)
-                .padding(12)
-                .background(Color(.systemGray6))
-                .cornerRadius(8)
             
-            // Tipo de Cuenta (No editable)
+            HStack {
+                TextField("País", text: $pais)
+                
+                Button {
+                    locationManager.requestLocation()
+                } label: {
+                    if locationManager.isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "location.fill")
+                            .foregroundColor(.purple)
+                    }
+                }
+            }
+            .padding(12)
+            .background(Color(.systemGray6))
+            .cornerRadius(8)
+            // Escuchamos al manager: Si encuentra país, actualiza el campo
+            .onChange(of: locationManager.country) { newCountry in
+                if let country = newCountry {
+                    self.pais = country
+                }
+            }
+            
+            // Tipo de Cuenta
             HStack {
                 Image(systemName: "circle.fill")
                     .font(.caption)
                     .foregroundColor(.purple)
                 Text("Tipo de cuenta:")
                     .font(.footnote)
-                Text(user.role.capitalized) // "Host" o "Player"
+                Text(user.role.capitalized)
                     .font(.footnote)
                     .fontWeight(.bold)
             }
@@ -232,8 +260,8 @@ struct StatsPreviewView: View {
             
             HStack(spacing: 10) {
                 StatCard(title: "Nivel", value: "\(user.level ?? 1)")
-                StatCard(title: "Ranking", value: "#\(user.xp ?? 0)") // Placeholder
-                StatCard(title: "Torneos", value: "0") // Placeholder
+                StatCard(title: "Ranking", value: "#\(user.globalRank ?? 0)")
+                StatCard(title: "Torneos", value: "\(user.tournamentsPlayed ?? 0)")
             }
             
             Text("Las estadísticas no se pueden editar manualmente")
@@ -247,7 +275,6 @@ struct StatsPreviewView: View {
         .padding(.horizontal)
     }
     
-    // Card pequeña para Estadísticas
     struct StatCard: View {
         let title: String
         let value: String

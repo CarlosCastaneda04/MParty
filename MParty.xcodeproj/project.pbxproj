@@ -20,9 +20,22 @@
 		02B2A2062EBE904F003CDDEF /* SecurePasswordView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurePasswordView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		FAEDE9792ED019C600BB3C0B /* Exceptions for "MParty" folder in "MParty" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 02B2A1D12EBE7297003CDDEF /* MParty */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		02B2A1D42EBE7297003CDDEF /* MParty */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				FAEDE9792ED019C600BB3C0B /* Exceptions for "MParty" folder in "MParty" target */,
+			);
 			path = MParty;
 			sourceTree = "<group>";
 		};
@@ -291,6 +304,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MParty/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Para poder detectar tu país y ubicación de torneos automáticamente.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -333,6 +348,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MParty/Info.plist;
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Para poder detectar tu país y ubicación de torneos automáticamente.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
