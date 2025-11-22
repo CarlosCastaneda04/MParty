@@ -20,7 +20,8 @@ struct RankingView: View {
             VStack(spacing: 25) {
                 
                 // --- 1. Tarjeta "Tu Ranking Actual" ---
-                if let currentUser = authViewModel.currentUser {
+                // Solo se muestra si el usuario actual es JUGADOR
+                if let currentUser = authViewModel.currentUser, currentUser.role == "Jugador" {
                     MyRankingCard(currentUser: currentUser, allUsers: viewModel.users)
                 }
                 
@@ -31,7 +32,6 @@ struct RankingView: View {
                     })
                     
                     FilterOption(title: "Nacional", isActive: !isGlobal, action: {
-                        // Usamos el país del usuario actual
                         if let country = authViewModel.currentUser?.pais {
                             selectedFilter = .national(country)
                         }
@@ -39,7 +39,7 @@ struct RankingView: View {
                 }
                 .padding(.horizontal)
                 
-                // --- 3. Dropdown de Juegos ---
+                // --- 3. Dropdown de Juegos (Visual) ---
                 HStack {
                     Text("Filtrar por juego:")
                         .font(.caption)
@@ -65,9 +65,15 @@ struct RankingView: View {
                 if viewModel.isLoading {
                     ProgressView()
                         .padding(.top, 50)
+                } else if viewModel.users.isEmpty {
+                    // Mensaje si no hay nadie
+                    Text("No hay jugadores en el ranking aún.")
+                        .foregroundColor(.secondary)
+                        .padding(.top, 50)
                 } else {
+                    
                     // --- 4. El Podio (Top 3) ---
-                    // CORRECCIÓN: Muestra el podio aunque sea solo 1 persona
+                    // CORRECCIÓN: Muestra el podio si hay AL MENOS 1 usuario
                     if !viewModel.users.isEmpty {
                         PodiumView(users: Array(viewModel.users.prefix(3)))
                     }
@@ -76,8 +82,16 @@ struct RankingView: View {
                     LazyVStack(spacing: 10) {
                         // Empezamos desde el índice 3 (el cuarto jugador)
                         ForEach(Array(viewModel.users.dropFirst(3).enumerated()), id: \.element.id) { index, user in
+                            
                             // El rango real es índice + 4 (porque saltamos 3)
-                            UserRankRow(user: user, rank: index + 4)
+                            let rank = index + 4
+                            
+                            // CORRECCIÓN: Pasamos si es el usuario actual para resaltarlo
+                            UserRankRow(
+                                user: user,
+                                rank: rank,
+                                isCurrentUser: authViewModel.currentUser?.id == user.id
+                            )
                         }
                     }
                     .padding(.horizontal)
@@ -265,10 +279,11 @@ struct PodiumCard: View {
     }
 }
 
-// 4. Fila de la Lista
+// 4. Fila de la Lista (ACTUALIZADA PARA RESALTAR AL USUARIO)
 struct UserRankRow: View {
     let user: User
     let rank: Int
+    let isCurrentUser: Bool // <-- Nuevo parámetro
     
     var body: some View {
         HStack(spacing: 15) {
@@ -285,25 +300,45 @@ struct UserRankRow: View {
             VStack(alignment: .leading) {
                 Text(user.displayName)
                     .fontWeight(.semibold)
+                    // Nombre morado si soy yo
+                    .foregroundColor(isCurrentUser ? .purple : .primary)
+                
                 Text("Nivel \(user.level ?? 1) • \(user.xp ?? 0) XP")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
+            
             Spacer()
             
-            if rank <= 10 {
+            // Etiqueta "TÚ" si es el usuario actual
+            if isCurrentUser {
+                Text("TÚ")
+                    .font(.caption)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.purple.opacity(0.2))
+                    .foregroundColor(.purple)
+                    .cornerRadius(5)
+            } else if rank <= 10 {
                 Image(systemName: "flame.fill")
                     .foregroundColor(.orange)
             }
         }
         .padding()
-        .background(Color.white)
+        // Fondo ligeramente morado si soy yo
+        .background(isCurrentUser ? Color.purple.opacity(0.05) : Color.white)
         .cornerRadius(15)
         .shadow(color: .black.opacity(0.03), radius: 2, x: 0, y: 1)
+        // Borde morado si soy yo
+        .overlay(
+            RoundedRectangle(cornerRadius: 15)
+                .stroke(isCurrentUser ? Color.purple.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
     }
 }
 
-// Helper para colores Hex
+// Helper para colores Hex (Importante mantenerlo aquí)
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
