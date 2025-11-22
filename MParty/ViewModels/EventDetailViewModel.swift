@@ -18,8 +18,8 @@ class EventDetailViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     // --- Variables para la Gestión del Torneo ---
-    @Published var event: Event // Ahora es @Published para que la UI reaccione a cambios de estado
-    @Published var generatedPairings: [String] = [] // Lista de textos "Jugador A vs Jugador B"
+    @Published var event: Event
+    @Published var generatedPairings: [String] = []
     
     private var db = Firestore.firestore()
     
@@ -32,7 +32,7 @@ class EventDetailViewModel: ObservableObject {
         isLoading = true
         await fetchParticipants()
         
-        // Recargamos el evento para tener el estado más reciente (Disponible, En Curso, etc)
+        // Recargamos el evento para tener el estado más reciente
         if let eventId = event.id {
             do {
                 let doc = try await db.collection("events").document(eventId).getDocument()
@@ -63,34 +63,42 @@ class EventDetailViewModel: ObservableObject {
     
     // --- ACCIONES DEL JUGADOR ---
     func joinEvent(user: User) async {
-        // VALIDACIÓN: No unirse si ya empezó
+        // VALIDACIÓN 1: Estado
         guard event.status == "Disponible" else {
             self.errorMessage = "El torneo ya inició o finalizó."
             return
         }
+        
+        // VALIDACIÓN 2: Capacidad (CORRECCIÓN CLAVE)
+        if participants.count >= event.maxPlayers {
+            self.errorMessage = "El torneo ya está lleno."
+            return
+        }
+        
         guard let eventId = event.id, let userId = user.id else { return }
         
         isLoading = true
         let newParticipant = Participant(from: user)
         
         do {
+            // 1. Guardar participante
             try await db.collection("events").document(eventId)
                       .collection("participants").document(userId)
                       .setData(newParticipant.dictionary)
             
+            // 2. Incrementar contador personal
             try await db.collection("users").document(userId).updateData([
                 "tournamentsPlayed": FieldValue.increment(Int64(1))
             ])
             
-            // Incrementa contador visual en el evento
+            // 3. Incrementar contador del evento
             try await db.collection("events").document(eventId).updateData([
                 "currentPlayers": FieldValue.increment(Int64(1))
             ])
             
             self.participants.append(newParticipant)
             self.hasCurrentUserJoined = true
-            // Actualizamos el evento localmente
-            self.event.currentPlayers += 1
+            self.event.currentPlayers += 1 // Actualizar localmente
             
         } catch {
             self.errorMessage = "Hubo un error al unirte."
@@ -99,7 +107,6 @@ class EventDetailViewModel: ObservableObject {
     }
     
     func cancelParticipation(userId: String) async {
-        // VALIDACIÓN: No salir si ya empezó
         guard event.status == "Disponible" else {
             self.errorMessage = "No puedes salirte, el torneo ya está en curso."
             return
@@ -108,17 +115,19 @@ class EventDetailViewModel: ObservableObject {
         
         isLoading = true
         do {
+            // 1. Borrar participante
             try await db.collection("events").document(eventId)
                       .collection("participants").document(userId)
                       .delete()
             
+            // 2. Decrementar contador del evento
             try await db.collection("events").document(eventId).updateData([
                 "currentPlayers": FieldValue.increment(Int64(-1))
             ])
             
             self.participants.removeAll { $0.id == userId }
             self.hasCurrentUserJoined = false
-            self.event.currentPlayers -= 1
+            self.event.currentPlayers -= 1 // Actualizar localmente
             
         } catch {
             self.errorMessage = "Hubo un error al cancelar."
@@ -126,9 +135,8 @@ class EventDetailViewModel: ObservableObject {
         isLoading = false
     }
     
-    // --- GESTIÓN DEL HOST (NUEVO) ---
+    // --- GESTIÓN DEL HOST ---
     
-    // 1. Iniciar Torneo
     func startTournament() async {
         guard let eventId = event.id else { return }
         isLoading = true
@@ -137,15 +145,19 @@ class EventDetailViewModel: ObservableObject {
             try await db.collection("events").document(eventId).updateData([
                 "status": "En Curso"
             ])
-            self.event = Event(id: event.id, title: event.title, description: event.description, gameType: event.gameType, mode: event.mode, location: event.location, maxPlayers: event.maxPlayers, eventDate: event.eventDate, status: "En Curso", hostId: event.hostId, hostName: event.hostName) // Actualizar local
-            // (Nota: idealmente actualizarías todo el objeto, aquí simplificamos para la UI)
+            // Actualizar localmente creando una copia del evento con el nuevo estado
+            var updatedEvent = event
+            // (Truco: Como 'let' no se puede cambiar, recreamos el struct con el nuevo valor)
+            // En tu modelo Event, 'status' es 'let'.
+            // Para simplificar, recargamos todo:
+            await fetchEventData(userId: "")
+            
         } catch {
             errorMessage = "Error al iniciar el torneo."
         }
         isLoading = false
     }
     
-    // 2. Generar Emparejamientos (Random 1vs1)
     func generatePairings() {
         guard participants.count >= 2 else {
             errorMessage = "Se necesitan al menos 2 jugadores."
@@ -161,7 +173,6 @@ class EventDetailViewModel: ObservableObject {
             pairings.append("⚔️ \(player1.displayName) VS \(player2.displayName)")
         }
         
-        // Si sobra uno (impar)
         if let oddOne = shuffledPlayers.first {
             pairings.append("🛡️ \(oddOne.displayName) pasa automáticamente (Bye)")
         }
@@ -169,52 +180,41 @@ class EventDetailViewModel: ObservableObject {
         self.generatedPairings = pairings
     }
     
-    // 3. Finalizar y Repartir Premios (El Gran Final)
     func finalizeTournament(winner: Participant, second: Participant?, third: Participant?) async {
         guard let eventId = event.id else { return }
         isLoading = true
         
-        let batch = db.batch() // Usamos batch para que todo se guarde junto o nada
-        
-        // A. Actualizar Estado del Torneo
+        let batch = db.batch()
         let eventRef = db.collection("events").document(eventId)
+        
+        // A. Finalizar Evento
         batch.updateData(["status": "Finalizado"], forDocument: eventRef)
         
-        // B. Repartir XP y Victorias
+        // B. Repartir XP
         for player in participants {
             guard let pid = player.id else { continue }
             let userRef = db.collection("users").document(pid)
-            
-            var xpGain = 25 // Base por participación
+            var xpGain = 25
             
             if pid == winner.id {
                 xpGain = 100
-                // Sumar victoria al ganador
                 batch.updateData([
                     "tournamentsWon": FieldValue.increment(Int64(1)),
                     "xp": FieldValue.increment(Int64(xpGain))
                 ], forDocument: userRef)
-                
             } else if pid == second?.id {
                 xpGain = 75
                 batch.updateData(["xp": FieldValue.increment(Int64(xpGain))], forDocument: userRef)
-                
             } else if pid == third?.id {
                 xpGain = 50
                 batch.updateData(["xp": FieldValue.increment(Int64(xpGain))], forDocument: userRef)
-                
             } else {
-                // Participación normal
                 batch.updateData(["xp": FieldValue.increment(Int64(xpGain))], forDocument: userRef)
             }
         }
         
-        // C. Ejecutar todo
         do {
             try await batch.commit()
-            // Actualizar UI local
-            // self.event.status = "Finalizado" (Necesitamos recrear el objeto struct)
-            // Para simplificar, recargamos:
             await fetchEventData(userId: "")
         } catch {
             errorMessage = "Error al finalizar el torneo."

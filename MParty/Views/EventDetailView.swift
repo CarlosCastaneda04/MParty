@@ -362,10 +362,16 @@ struct FooterButtonView: View {
     var body: some View {
         VStack(spacing: 15) {
             
+            // Info de Disponibles
             HStack {
                 Image(systemName: "person.2").foregroundColor(.gray)
-                Text("Disponibles: \(viewModel.event.maxPlayers - viewModel.participants.count)").font(.subheadline).foregroundColor(.secondary)
+                
+                // Corregimos para que no muestre números negativos
+                let available = max(0, viewModel.event.maxPlayers - viewModel.participants.count)
+                Text("Disponibles: \(available)").font(.subheadline).foregroundColor(.secondary)
+                
                 Spacer()
+                
                 if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent {
                     Text("$\(String(format: "%.2f", fee))").font(.title3).fontWeight(.bold).foregroundColor(.green)
                 } else {
@@ -378,23 +384,21 @@ struct FooterButtonView: View {
                 Text(error).font(.caption).foregroundColor(.red)
             }
             
-            // --- LÓGICA DE BOTONES SEGÚN ESTADO Y ROL ---
+            // --- BOTONES LÓGICOS ---
             if user.role == "Organizador" {
-                // Si es organizador, siempre ve este mensaje (porque él gestiona arriba)
+                // Caso 1: Organizador
                 Text("Eres el organizador")
                     .font(.subheadline).foregroundColor(.secondary)
                     .frame(maxWidth: .infinity).padding().background(Color(.systemGray6)).cornerRadius(12)
                 
             } else if viewModel.event.status != "Disponible" {
-                // --- BLOQUEO: SI NO ESTÁ DISPONIBLE, NADIE ENTRA NI SALE ---
+                // Caso 2: Torneo Cerrado (En curso o finalizado)
                 Text(viewModel.event.status == "En Curso" ? "Torneo en Curso" : "Torneo Finalizado")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity).padding()
-                    .background(Color.gray).cornerRadius(12)
+                    .font(.headline).foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding().background(Color.gray).cornerRadius(12)
                 
             } else if viewModel.hasCurrentUserJoined {
-                // Jugador Unido -> Cancelar
+                // Caso 3: Ya estoy dentro -> Cancelar
                 Button {
                     Task { await viewModel.cancelParticipation(userId: user.id ?? "") }
                 } label: {
@@ -404,8 +408,19 @@ struct FooterButtonView: View {
                         .background(Color.red.opacity(0.1)).cornerRadius(12)
                 }
                 
+            } else if viewModel.participants.count >= viewModel.event.maxPlayers {
+                // CASO 4 (NUEVO): TORNEO LLENO
+                Text("Cupos Llenos")
+                    .font(.headline)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding()
+                    .background(Color.gray) // Botón deshabilitado gris
+                    .cornerRadius(12)
+                
             } else {
-                // Jugador No Unido -> Unirse
+                // Caso 5: Disponible -> Unirme
                 Button {
                     Task { await viewModel.joinEvent(user: user) }
                 } label: {
