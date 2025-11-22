@@ -18,7 +18,7 @@ struct EventDetailView: View {
     
     @State private var selectedTab: String = "General"
     
-    // State para mostrar la hoja de selección de ganadores
+    // State para mostrar la hoja de selección de ganadores (Solo Host)
     @State private var showWinnersSheet = false
     
     init(event: Event) {
@@ -34,7 +34,7 @@ struct EventDetailView: View {
                 ScrollView {
                     VStack(spacing: 0) {
                         
-                        // 1. HEADER CON IMAGEN
+                        // 1. HEADER CON IMAGEN REAL
                         CustomHeaderView(event: viewModel.event, onDismiss: {
                             dismiss()
                         })
@@ -45,12 +45,12 @@ struct EventDetailView: View {
                             // Info básica
                             InfoCard(event: viewModel.event)
                             
-                            // --- PANEL DE CONTROL DEL HOST (NUEVO) ---
+                            // --- PANEL DE CONTROL DEL HOST ---
                             // Solo aparece si eres Organizador Y eres el dueño de este evento
                             if user.role == "Organizador" && user.id == viewModel.event.hostId {
                                 HostControlPanel(viewModel: viewModel, showWinnersSheet: $showWinnersSheet)
                             }
-                            // ------------------------------------------
+                            // ----------------------------------
                             
                             OrganizerCard(hostName: viewModel.event.hostName)
                             
@@ -62,7 +62,7 @@ struct EventDetailView: View {
                                 PlayersListView(participants: viewModel.participants)
                             }
                             
-                            // Espacio extra para el footer
+                            // Espacio extra para que el botón flotante no tape el final
                             Spacer().frame(height: 120)
                         }
                         .padding(.top, 20)
@@ -71,20 +71,20 @@ struct EventDetailView: View {
                 }
                 .edgesIgnoringSafeArea(.top)
                 
-                // --- 3. BARRA FLOTANTE INFERIOR ---
+                // --- 3. BARRA FLOTANTE INFERIOR (Pagos y Unirse) ---
                 FooterButtonView(
                     viewModel: viewModel,
                     user: user
                 )
             }
+            // Configuración de Navegación
             .navigationBarHidden(true)
             .toolbar(.hidden, for: .tabBar)
             .task {
                 await viewModel.fetchEventData(userId: user.id ?? "")
             }
-            // --- SHEET PARA ELEGIR GANADORES ---
+            // --- SHEET PARA ELEGIR GANADORES (SOLO HOST) ---
             .sheet(isPresented: $showWinnersSheet) {
-                // Asegúrate de haber creado el archivo SelectWinnersView.swift que te pasé antes
                 SelectWinnersView(participants: viewModel.participants) { first, second, third in
                     Task {
                         await viewModel.finalizeTournament(winner: first, second: second, third: third)
@@ -98,7 +98,7 @@ struct EventDetailView: View {
     }
 }
 
-// MARK: - PANEL DE CONTROL DEL HOST (NUEVO)
+// MARK: - PANEL DE CONTROL DEL HOST
 struct HostControlPanel: View {
     @ObservedObject var viewModel: EventDetailViewModel
     @Binding var showWinnersSheet: Bool
@@ -134,7 +134,6 @@ struct HostControlPanel: View {
                             .cornerRadius(10)
                     }
                     
-                    // Muestra los emparejamientos si se generaron
                     if !viewModel.generatedPairings.isEmpty {
                         VStack(alignment: .leading) {
                             Text("Alineación:").font(.caption).bold()
@@ -230,7 +229,103 @@ struct CustomHeaderView: View {
     }
 }
 
-// MARK: - COMPONENTES ESTÁNDAR
+// MARK: - FOOTER CON LÓGICA DE PAGO Y ESTADO
+struct FooterButtonView: View {
+    @ObservedObject var viewModel: EventDetailViewModel
+    let user: User
+    
+    // Estado para mostrar la hoja de pago
+    @State private var showPaymentSheet = false
+    
+    var body: some View {
+        VStack(spacing: 15) {
+            
+            // Info de Disponibles
+            HStack {
+                Image(systemName: "person.2").foregroundColor(.gray)
+                let available = max(0, viewModel.event.maxPlayers - viewModel.participants.count)
+                Text("Disponibles: \(available)").font(.subheadline).foregroundColor(.secondary)
+                Spacer()
+                
+                if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent {
+                    Text("$\(String(format: "%.2f", fee))").font(.title3).fontWeight(.bold).foregroundColor(.green)
+                } else {
+                    Text("Gratis").font(.headline).foregroundColor(.white).padding(.horizontal, 10).padding(.vertical, 4).background(Color.green).cornerRadius(8)
+                }
+            }
+            .padding(.horizontal)
+            
+            if let error = viewModel.errorMessage {
+                Text(error).font(.caption).foregroundColor(.red)
+            }
+            
+            // --- BOTONES LÓGICOS ---
+            if user.role == "Organizador" {
+                Text("Los organizadores no pueden unirse a torneos")
+                    .font(.subheadline).foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity).padding().background(Color(.systemGray6)).cornerRadius(12)
+                
+            } else if viewModel.event.status != "Disponible" {
+                Text(viewModel.event.status == "En Curso" ? "Torneo en Curso" : "Torneo Finalizado")
+                    .font(.headline).foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding().background(Color.gray).cornerRadius(12)
+                
+            } else if viewModel.hasCurrentUserJoined {
+                Button {
+                    Task { await viewModel.cancelParticipation(userId: user.id ?? "") }
+                } label: {
+                    Text("Cancelar Participación")
+                        .font(.headline).fontWeight(.bold).foregroundColor(.red)
+                        .frame(maxWidth: .infinity).padding()
+                        .background(Color.red.opacity(0.1)).cornerRadius(12)
+                }
+                
+            } else if viewModel.participants.count >= viewModel.event.maxPlayers {
+                Text("Cupos Llenos")
+                    .font(.headline).fontWeight(.bold).foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding().background(Color.gray).cornerRadius(12)
+                
+            } else {
+                // --- BOTÓN DE UNIRSE / PAGAR ---
+                Button {
+                    // 1. Verificamos si es de pago
+                    if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent, fee > 0 {
+                        showPaymentSheet = true
+                    } else {
+                        Task { await viewModel.joinEvent(user: user) }
+                    }
+                } label: {
+                    HStack {
+                        if viewModel.isLoading { ProgressView().padding(.trailing, 5) }
+                        Text(viewModel.event.isPaidEvent ? "Pagar e Inscribirse" : "Unirme al Torneo")
+                            .font(.headline).fontWeight(.bold)
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity).padding()
+                    .background(viewModel.event.isPaidEvent ? Color.green : Color.purple)
+                    .cornerRadius(12)
+                }
+                // Hoja de Pago
+                .sheet(isPresented: $showPaymentSheet) {
+                    PaymentSheetView(
+                        title: "Inscripción a Torneo",
+                        subtitle: viewModel.event.title,
+                        amount: viewModel.event.entryFee ?? 0,
+                        onPaymentSuccess: {
+                            Task { await viewModel.joinEvent(user: user) }
+                        }
+                    )
+                    .presentationDetents([.large]) // Pantalla completa
+                }
+            }
+        }
+        .padding(.top, 20).padding(.bottom, 10).padding(.horizontal)
+        .background(Color.white)
+        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
+    }
+}
+
+// MARK: - COMPONENTES ESTÁNDAR (Sin cambios)
 struct InfoCard: View {
     let event: Event
     var body: some View {
@@ -353,89 +448,4 @@ struct DetailRow: View {
         }
     }
 }
-
-// --- BOTTOM BAR (PIE DE PÁGINA) CON LÓGICA DE ESTADO ---
-struct FooterButtonView: View {
-    @ObservedObject var viewModel: EventDetailViewModel
-    let user: User
-    
-    var body: some View {
-        VStack(spacing: 15) {
-            
-            // Info de Disponibles
-            HStack {
-                Image(systemName: "person.2").foregroundColor(.gray)
-                
-                // Corregimos para que no muestre números negativos
-                let available = max(0, viewModel.event.maxPlayers - viewModel.participants.count)
-                Text("Disponibles: \(available)").font(.subheadline).foregroundColor(.secondary)
-                
-                Spacer()
-                
-                if let fee = viewModel.event.entryFee, viewModel.event.isPaidEvent {
-                    Text("$\(String(format: "%.2f", fee))").font(.title3).fontWeight(.bold).foregroundColor(.green)
-                } else {
-                    Text("Gratis").font(.headline).foregroundColor(.white).padding(.horizontal, 10).padding(.vertical, 4).background(Color.green).cornerRadius(8)
-                }
-            }
-            .padding(.horizontal)
-            
-            if let error = viewModel.errorMessage {
-                Text(error).font(.caption).foregroundColor(.red)
-            }
-            
-            // --- BOTONES LÓGICOS ---
-            if user.role == "Organizador" {
-                // Caso 1: Organizador
-                Text("Eres el organizador")
-                    .font(.subheadline).foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity).padding().background(Color(.systemGray6)).cornerRadius(12)
-                
-            } else if viewModel.event.status != "Disponible" {
-                // Caso 2: Torneo Cerrado (En curso o finalizado)
-                Text(viewModel.event.status == "En Curso" ? "Torneo en Curso" : "Torneo Finalizado")
-                    .font(.headline).foregroundColor(.white)
-                    .frame(maxWidth: .infinity).padding().background(Color.gray).cornerRadius(12)
-                
-            } else if viewModel.hasCurrentUserJoined {
-                // Caso 3: Ya estoy dentro -> Cancelar
-                Button {
-                    Task { await viewModel.cancelParticipation(userId: user.id ?? "") }
-                } label: {
-                    Text("Cancelar Participación")
-                        .font(.headline).fontWeight(.bold).foregroundColor(.red)
-                        .frame(maxWidth: .infinity).padding()
-                        .background(Color.red.opacity(0.1)).cornerRadius(12)
-                }
-                
-            } else if viewModel.participants.count >= viewModel.event.maxPlayers {
-                // CASO 4 (NUEVO): TORNEO LLENO
-                Text("Cupos Llenos")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color.gray) // Botón deshabilitado gris
-                    .cornerRadius(12)
-                
-            } else {
-                // Caso 5: Disponible -> Unirme
-                Button {
-                    Task { await viewModel.joinEvent(user: user) }
-                } label: {
-                    Text("Unirme al Torneo")
-                        .font(.headline).fontWeight(.bold).foregroundColor(.white)
-                        .frame(maxWidth: .infinity).padding()
-                        .background(Color.purple).cornerRadius(12)
-                }
-            }
-        }
-        .padding(.top, 20).padding(.bottom, 10).padding(.horizontal)
-        .background(Color.white)
-        .shadow(color: .black.opacity(0.1), radius: 10, x: 0, y: -5)
-    }
-}
-
-
 

@@ -8,7 +8,7 @@
 import Foundation
 import Combine
 import FirebaseFirestore
-import FirebaseStorage // <-- IMPORTANTE
+import FirebaseStorage 
 import SwiftUI // Para UIImage
 
 @MainActor
@@ -62,7 +62,8 @@ class EventViewModel: ObservableObject {
         maxPlayers: Int,
         isPaidEvent: Bool,
         host: User,
-        bannerImage: UIImage? // <-- NUEVO PARÁMETRO
+        bannerImage: UIImage?, // <-- NUEVO PARÁMETRO
+        entryFee: Double? = nil // <-- NUEVO PARÁMETRO
     ) async -> Bool {
         
         isLoading = true
@@ -88,7 +89,7 @@ class EventViewModel: ObservableObject {
             "hostId": host.id ?? "",
             "hostName": host.displayName,
             "eventBannerURL": bannerURL ?? NSNull(), // <-- GUARDAMOS LA URL
-            "entryFee": NSNull(),
+            "entryFee": entryFee ?? NSNull(),
             "currentPlayers": 0
         ]
         

@@ -170,11 +170,11 @@ class EventDetailViewModel: ObservableObject {
         while shuffledPlayers.count >= 2 {
             let player1 = shuffledPlayers.removeFirst()
             let player2 = shuffledPlayers.removeFirst()
-            pairings.append("⚔️ \(player1.displayName) VS \(player2.displayName)")
+            pairings.append("\(player1.displayName) VS \(player2.displayName)")
         }
         
         if let oddOne = shuffledPlayers.first {
-            pairings.append("🛡️ \(oddOne.displayName) pasa automáticamente (Bye)")
+            pairings.append("\(oddOne.displayName) pasa automáticamente (Bye)")
         }
         
         self.generatedPairings = pairings

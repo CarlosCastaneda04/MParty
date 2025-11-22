@@ -7,23 +7,15 @@
 
 
 import SwiftUI
-import PhotosUI // Para el selector de fotos
+import PhotosUI
 
 struct CreateEventView: View {
     
-    // 1. El cerebro para guardar el evento
     @StateObject private var viewModel = EventViewModel()
-    
-    // 2. El cerebro para saber QUIÉN crea el evento
     @EnvironmentObject var authViewModel: AuthViewModel
-    
-    // 3. El cerebro para la ubicación
     @StateObject private var locationManager = LocationManager()
-    
-    // 4. Para cerrar la vista (Cancelar, Guardar)
     @Environment(\.dismiss) var dismiss
     
-    // --- States para todos los campos del formulario ---
     @State private var title: String = ""
     @State private var description: String = ""
     @State private var gameType: String = "Ajedrez"
@@ -33,185 +25,179 @@ struct CreateEventView: View {
     @State private var maxPlayers: Int = 16
     @State private var isPaidEvent: Bool = false
     
-    // --- IMAGEN DEL BANNER (NUEVO) ---
+    // Pago
+    @State private var entryFeeString: String = "10"
+    @State private var showPaymentSheet = false // <-- PARA MOSTRAR LA HOJA
+    
+    // Imagen
     @State private var selectedBannerItem: PhotosPickerItem?
     @State private var selectedBannerImage: UIImage?
     
-    // Opciones para los Pickers
     let gameOptions = ["Ajedrez", "Monopoly", "Cartas", "Catan", "Otro"]
     let modeOptions = ["Amistoso", "Competitivo"]
-    let playerOptions = [2, 4, 8, 16, 32]
+    let playerOptions = [2, 4, 8, 10, 16, 32]
+    
+    // Calculadora de ganancias (mismo modelo simple)
+    var appFee: Double {
+        let fee = Double(entryFeeString) ?? 0
+        return (fee * 10) * 0.17 // 17% del pot total (precio * 10 jugadores)
+    }
     
     var body: some View {
         if let user = authViewModel.currentUser {
             Form {
-                
-                // --- SECCIÓN 0: BANNER DEL EVENTO ---
+                // --- SECCIÓN 0: BANNER ---
                 Section {
                     VStack(spacing: 10) {
                         if let image = selectedBannerImage {
-                            // Muestra la imagen seleccionada
-                            Image(uiImage: image)
-                                .resizable()
-                                .scaledToFill()
-                                .frame(height: 150)
-                                .cornerRadius(10)
-                                .clipped()
+                            Image(uiImage: image).resizable().scaledToFill().frame(height: 150).cornerRadius(10).clipped()
                         } else {
-                            // Placeholder
-                            Rectangle()
-                                .fill(Color(.systemGray5))
-                                .frame(height: 150)
-                                .cornerRadius(10)
-                                .overlay(
-                                    VStack {
-                                        Image(systemName: "photo.badge.plus")
-                                            .font(.system(size: 30))
-                                            .foregroundColor(.purple)
-                                        Text("Añadir Banner")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                )
+                            Rectangle().fill(Color(.systemGray5)).frame(height: 150).cornerRadius(10).overlay(
+                                VStack {
+                                    Image(systemName: "photo.badge.plus").font(.system(size: 30)).foregroundColor(.purple)
+                                    Text("Añadir Banner").font(.caption).foregroundColor(.secondary)
+                                }
+                            )
                         }
                     }
-                    .overlay(
-                        // El selector invisible encima
-                        PhotosPicker(selection: $selectedBannerItem, matching: .images) {
-                            Color.clear // Hace que toda el área sea tocable
-                        }
-                    )
-                    .listRowInsets(EdgeInsets()) // Quita márgenes de la lista
+                    .overlay(PhotosPicker(selection: $selectedBannerItem, matching: .images) { Color.clear })
+                    .listRowInsets(EdgeInsets())
                 }
                 .onChange(of: selectedBannerItem) { newItem in
                     Task {
                         if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                            if let uiImage = UIImage(data: data) {
-                                selectedBannerImage = uiImage
-                            }
+                            if let uiImage = UIImage(data: data) { selectedBannerImage = uiImage }
                         }
                     }
                 }
                 
-                // --- Sección 1: Información Básica ---
+                // --- INFORMACIÓN BÁSICA ---
                 Section(header: Text("Información Básica")) {
                     TextField("Nombre del Torneo", text: $title)
-                    TextField("Describe tu torneo...", text: $description, axis: .vertical)
-                        .lineLimit(3...)
+                    TextField("Describe tu torneo...", text: $description, axis: .vertical).lineLimit(3...)
                     Picker("Juego", selection: $gameType) {
                         ForEach(gameOptions, id: \.self) { Text($0) }
                     }
                 }
                 
-                // --- Sección 2: Fecha y Hora ---
-                Section(header: Text("Fecha y Hora")) {
-                    DatePicker(
-                        "Fecha y Hora",
-                        selection: $eventDate,
-                        in: Date()...,
-                        displayedComponents: [.date, .hourAndMinute]
-                    )
-                }
-                
-                // --- Sección 3: Ubicación ---
-                Section(header: Text("Ubicación")) {
+                Section(header: Text("Fecha y Ubicación")) {
+                    DatePicker("Fecha y Hora", selection: $eventDate, in: Date()..., displayedComponents: [.date, .hourAndMinute])
                     HStack {
-                        TextField("Dirección del Lugar", text: $location)
-                        
-                        Button {
-                            locationManager.requestLocation()
-                        } label: {
-                            if locationManager.isLoading {
-                                ProgressView().scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "location.fill").foregroundColor(.purple)
-                            }
+                        TextField("Dirección", text: $location)
+                        Button { locationManager.requestLocation() } label: {
+                            if locationManager.isLoading { ProgressView() } else { Image(systemName: "location.fill").foregroundColor(.purple) }
                         }
                     }
-                    .onChange(of: locationManager.address) { newAddress in
-                        if let address = newAddress {
-                            self.location = address
-                        }
-                    }
-                    
-                    if let locError = locationManager.errorMessage {
-                        Text(locError).font(.caption).foregroundColor(.red)
-                    }
+                    .onChange(of: locationManager.address) { newAddress in if let address = newAddress { self.location = address } }
                 }
                 
-                // --- Sección 4: Configuración ---
+                // --- CONFIGURACIÓN Y PAGO ---
                 Section(header: Text("Configuración")) {
                     Picker("Tipo", selection: $mode) {
                         ForEach(modeOptions, id: \.self) { Text($0) }
-                    }
-                    .pickerStyle(.segmented)
+                    }.pickerStyle(.segmented)
                     
-                    Picker("Jugadores", selection: $maxPlayers) {
-                        ForEach(playerOptions, id: \.self) { Text("\($0)") }
-                    }
+                    Toggle("Torneo de Paga (Con Premios)", isOn: $isPaidEvent)
+                        .tint(.green)
+                        .onChange(of: isPaidEvent) { isPaid in
+                            if isPaid {
+                                maxPlayers = 10
+                                mode = "Competitivo"
+                            }
+                        }
                     
-                    Toggle("Torneo de Pago", isOn: $isPaidEvent)
+                    if isPaidEvent {
+                        HStack {
+                            Text("Precio de Entrada ($)")
+                            Spacer()
+                            TextField("0", text: $entryFeeString)
+                                .keyboardType(.decimalPad)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 80)
+                        }
+                        Text("🔒 Los torneos de paga están limitados a 10 jugadores.").font(.caption).foregroundColor(.secondary)
+                        
+                        // Desglose rápido
+                        HStack {
+                            Text("Comisión por crear:")
+                            Spacer()
+                            Text("$\(String(format: "%.2f", appFee))").bold().foregroundColor(.red)
+                        }
+                    } else {
+                        Picker("Jugadores", selection: $maxPlayers) {
+                            ForEach(playerOptions, id: \.self) { Text("\($0)") }
+                        }
+                    }
                 }
                 
-                // --- Botones ---
+                // --- BOTONES ---
                 Section {
                     Button {
-                        Task {
-                            // Llama al ViewModel con todos los datos, INCLUYENDO LA IMAGEN
-                            let success = await viewModel.createEvent(
-                                title: title,
-                                description: description,
-                                gameType: gameType,
-                                eventDate: eventDate,
-                                location: location,
-                                mode: mode,
-                                maxPlayers: maxPlayers,
-                                isPaidEvent: isPaidEvent,
-                                host: user,
-                                bannerImage: selectedBannerImage // <-- AQUÍ PASAMOS LA IMAGEN
-                            )
-                            
-                            if success {
-                                dismiss()
-                            }
+                        if isPaidEvent {
+                            // Mostrar Hoja de Pago
+                            showPaymentSheet = true
+                        } else {
+                            // Crear directo
+                            Task { await submitEvent(user: user) }
                         }
                     } label: {
                         if viewModel.isLoading {
-                            ProgressView()
+                            ProgressView().frame(maxWidth: .infinity)
                         } else {
-                            Text("Crear Torneo")
+                            Text(isPaidEvent ? "Pagar $\(String(format: "%.0f", appFee)) y Crear" : "Crear Torneo")
                                 .fontWeight(.bold)
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .tint(.purple)
+                    .tint(isPaidEvent ? .green : .purple)
                     .disabled(title.isEmpty || location.isEmpty)
                     
-                    Button("Cancelar", role: .destructive) {
-                        dismiss()
-                    }
+                    Button("Cancelar", role: .destructive) { dismiss() }
                 }
             }
             .navigationTitle("Crear Torneo")
             .navigationBarTitleDisplayMode(.inline)
-            .disabled(viewModel.isLoading)
+            .sheet(isPresented: $showPaymentSheet) {
+                // AQUÍ LLAMAMOS A LA NUEVA HOJA DE PAGO BONITA
+                PaymentSheetView(
+                    title: "Creación de Torneo",
+                    subtitle: title,
+                    amount: appFee,
+                    onPaymentSuccess: {
+                        Task { await submitEvent(user: user) }
+                    }
+                )
+                .presentationDetents([.large]) // Pantalla completa para que se vea bien
+            }
             .overlay(
                 VStack {
                     if let error = viewModel.errorMessage {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundColor(.white)
-                            .padding()
-                            .background(Color.red)
-                            .cornerRadius(10)
-                            .padding(.top, 50)
+                        Text(error).font(.caption).foregroundColor(.white).padding().background(Color.red).cornerRadius(10).padding(.top, 50)
                         Spacer()
                     }
                 }
             )
             
         } else {
-            Text("Error: No se pudo cargar el usuario.")
+            Text("Error de usuario")
         }
+    }
+    
+    func submitEvent(user: User) async {
+        let entryFeeDouble = Double(entryFeeString)
+        let success = await viewModel.createEvent(
+            title: title,
+            description: description,
+            gameType: gameType,
+            eventDate: eventDate,
+            location: location,
+            mode: mode,
+            maxPlayers: maxPlayers,
+            isPaidEvent: isPaidEvent,
+            host: user,
+            bannerImage: selectedBannerImage,
+            entryFee: entryFeeDouble
+        )
+        if success { dismiss() }
     }
 }
