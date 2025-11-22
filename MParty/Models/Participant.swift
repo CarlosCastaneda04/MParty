@@ -8,7 +8,7 @@
 import Foundation
 import FirebaseFirestore
 
-struct Participant: Identifiable, Codable {
+struct Participant: Identifiable, Codable, Hashable {
     
     // Usaremos el UID del usuario como el ID del documento
     @DocumentID var id: String?
