@@ -114,7 +114,7 @@ struct HeaderView: View {
                     .foregroundColor(.gray)
                 Text(user.pais ?? "Ubicación")
                 Text("•")
-                Text("Nivel \(user.level ?? 1)")
+                Text("Nivel \(user.calculatedLevel)") // Usamos calculatedLevel
                     .foregroundColor(.gray)
             }
             .font(.subheadline)
@@ -284,13 +284,13 @@ struct OrganizerSummaryView: View {
             .padding(.horizontal)
             
             if selectedTab == "General" {
-                // --- PESTAÑA GENERAL (ACTUALIZADA CON DATOS REALES) ---
+                // --- PESTAÑA GENERAL (DATOS REALES) ---
                 VStack(alignment: .leading, spacing: 15) {
                     Text("Resumen de Organización")
                         .font(.headline)
                         .padding(.top)
                     
-                    // 1. Tasa de Éxito (Torneos Finalizados vs Totales)
+                    // 1. Tasa de Éxito
                     ProgressRow(
                         title: "Tasa de Éxito",
                         value: String(format: "%.0f%%", eventViewModel.successRate * 100),
@@ -298,13 +298,11 @@ struct OrganizerSummaryView: View {
                     )
                     
                     // 2. Asistencia Promedio
-                    // Calculamos el número real para mostrarlo en texto
                     let realAvg = eventViewModel.createdCount > 0 ? Double(eventViewModel.totalPlayersCount) / Double(eventViewModel.createdCount) : 0.0
-                    
                     ProgressRow(
                         title: "Asistencia Promedio",
                         value: String(format: "%.1f / torneo", realAvg),
-                        progress: eventViewModel.averageAttendance // Usamos el valor normalizado (0-1) para la barra
+                        progress: eventViewModel.averageAttendance
                     )
                     
                     // 3. Torneos Activos
@@ -355,12 +353,12 @@ struct PlayerPerformanceView: View {
                 color: .black
             )
             
-            // Progreso de Nivel
+            // Progreso de Nivel (Dinámico)
             ProgressBarRow(
                 label: "Progreso de Nivel",
-                valueText: "Nivel \(user.level ?? 1)",
+                valueText: "Nivel \(user.calculatedLevel)", // Nivel calculado
                 subText: "",
-                progress: 0.45, // Placeholder (podrías calcularlo con user.xp)
+                progress: user.levelProgress, // Progreso calculado
                 color: .black
             )
             
@@ -369,7 +367,6 @@ struct PlayerPerformanceView: View {
                 label: "Actividad",
                 valueText: "\(user.tournamentsPlayed ?? 0)",
                 subText: "torneos",
-                // Meta arbitraria de 100 para la barra visual
                 progress: Double(user.tournamentsPlayed ?? 0) / 100.0,
                 color: .black
             )
@@ -381,7 +378,6 @@ struct PlayerPerformanceView: View {
         .padding(.horizontal)
     }
 }
-
 
 // MARK: - Componentes Auxiliares UI
 
@@ -440,12 +436,12 @@ struct ProgressBarRow: View {
     }
 }
 
-// Tarjeta pequeña de evento para la lista del perfil
+// Tarjeta pequeña de evento para la lista del perfil (CORREGIDA CON IMAGEN)
 struct EventListMiniCard: View {
     let event: Event
     var body: some View {
         HStack(spacing: 15) {
-            // Imagen pequeña (CORREGIDO: Ahora usa la URL real)
+            // Imagen pequeña
             Group {
                 if let bannerURL = event.eventBannerURL, let url = URL(string: bannerURL) {
                     AsyncImage(url: url) { image in
@@ -459,7 +455,7 @@ struct EventListMiniCard: View {
             }
             .frame(width: 80, height: 80)
             .cornerRadius(10)
-            .clipped() // Importante para recortar la imagen
+            .clipped()
             
             VStack(alignment: .leading, spacing: 5) {
                 HStack {
@@ -505,6 +501,8 @@ struct EventListMiniCard: View {
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.gray.opacity(0.1), lineWidth: 1))
     }
 }
+
+// Componente ProgressRow
 struct ProgressRow: View {
     let title: String
     let value: String
